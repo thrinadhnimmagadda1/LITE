@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { categories } from '../constants/categories';
 
-const ListSection = ({ title, items, onCategorySelect }) => {
+const ListSection = ({ title, items = [], onCategorySelect }) => {
   return (
     <div className="max-w-3xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
       <div className="bg-white shadow overflow-hidden sm:rounded-lg">
@@ -47,17 +47,32 @@ const ListSection = ({ title, items, onCategorySelect }) => {
                     </p>
                     <span className="text-xs text-gray-500">View details →</span>
                   </div>
-                  <div className="mt-2 sm:flex sm:justify-between">
-                    <div className="sm:flex">
-                      <p className="flex items-center text-sm text-gray-500">
-                        {item.line1}
-                      </p>
+                  <div className="mt-2">
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {item.technologies?.map((tech, techIndex) => (
+                        <button
+                          key={techIndex}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onCategorySelect?.(tech);
+                          }}
+                          className="px-2 py-1 text-xs font-medium text-blue-700 bg-blue-100 rounded-md hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500"
+                        >
+                          {tech}
+                        </button>
+                      ))}
                     </div>
-                  </div>
-                  <div className="mt-1">
-                    <p className="text-sm text-gray-500">
-                      {item.line2}
-                    </p>
+                    <div className="sm:flex sm:justify-between">
+                      <div className="sm:flex">
+                        <p className="flex items-center text-sm text-gray-500">
+                          {item.line1}
+                        </p>
+                      </div>
+                      <div className="mt-2 flex items-center text-sm text-gray-500 sm:mt-0">
+                        <p>{item.line2}</p>
+                      </div>
+                    </div>
                   </div>
                   <div className="mt-1">
                     <p className="text-sm text-gray-500">

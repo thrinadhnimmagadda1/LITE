@@ -63,19 +63,26 @@ const getCommentsByItemId = async (itemId) => {
 };
 
 const getAllComments = async () => {
-  const [rows] = await pool.query('SELECT * FROM comments ORDER BY createdAt DESC');
+  const rows = await new Promise((resolve, reject) => {
+    db.all('SELECT * FROM comments ORDER BY createdAt DESC', (err, rows) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(rows);
+      }
+    });
+  });
   return rows;
 };
 
-// Close the pool when the application shuts down
-process.on('SIGINT', async () => {
-  await pool.end();
+// Close the database when the application shuts down
+process.on('SIGINT', () => {
+  db.close();
   process.exit(0);
 });
 
 module.exports = {
   insertComment,
   getCommentsByItemId,
-  getAllComments,
-  pool
+  getAllComments
 };
