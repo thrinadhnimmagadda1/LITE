@@ -8,7 +8,7 @@ const ItemDetail = () => {
   const currentItem = items.find(item => item.id === numericId);
 
   if (!currentItem) {
-    return <div className="max-w-4xl mx-auto py-8 px-4 sm:px-6 lg:px-8 text-center text-xl">Item not found.</div>;
+    return <div className="max-w-4xl mx-auto py-8 px-4 sm:px-6 lg:px-8 text-center text-xl dark:text-white">Item not found.</div>;
   }
 
   // Use data from currentItem
@@ -34,33 +34,42 @@ const ItemDetail = () => {
   };
 
   return (
-    <div className="max-w-6xl mx-auto py-4 sm:py-6 px-2 sm:px-4">
-      <div className="bg-white shadow-lg rounded-xl overflow-hidden">
-        <div className="px-6 py-5 bg-gradient-to-r from-indigo-500 to-purple-600">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <h2 className="text-2xl font-bold text-white">{item.title}</h2>
-            <Link 
-              to="/" 
-              className="inline-flex items-center px-4 py-2 bg-white text-indigo-700 font-medium rounded-md hover:bg-indigo-50 transition-colors shadow-sm"
-            >
-              Back to List
-            </Link>
-          </div>
+    <div className="max-w-4xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+      <div className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg transition-colors duration-200">
+        <div className="px-4 py-5 sm:px-6 bg-gray-50 dark:bg-gray-700">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{item.title}</h1>
+          <p className="mt-1 max-w-2xl text-sm text-gray-500 dark:text-gray-300">Item Details</p>
         </div>
-        <div className="p-0">
-          <dl className="divide-y divide-gray-200">
-            {item.content.map((line, index) => (
-              <div key={index} className={index < 3 ? 'px-6 py-4' : 'p-0'}>
-                <div className="w-full">
-                  {line}
-                </div>
+        <div className="border-t border-gray-200 dark:border-gray-700">
+          <dl>
+            {item.content.map((content, index) => (
+              <div 
+                key={index} 
+                className={`px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6 transition-colors duration-200 ${
+                  index % 2 === 0 
+                    ? 'bg-white dark:bg-gray-800' 
+                    : 'bg-gray-50 dark:bg-gray-700'
+                }`}
+              >
+                {/* <dt className="text-sm font-medium text-gray-500 dark:text-gray-300">
+                  Line {index + 1}
+                </dt> */}
+                <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100 sm:col-span-2 sm:mt-0">
+                  {content}
+                </dd>
               </div>
             ))}
           </dl>
         </div>
       </div>
-      
-
+      <div className="mt-5">
+        <Link 
+          to="/" 
+          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-indigo-700 dark:hover:bg-indigo-600 transition-colors duration-200"
+        >
+          Back to list
+        </Link>
+      </div>
     </div>
   );
 };
