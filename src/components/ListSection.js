@@ -38,7 +38,7 @@ const ListSection = ({ title, items = [], onCategorySelect }) => {
             {items.map((item, index) => (
               <li key={index} className="hover:bg-gray-50">
                 <Link 
-                  to={`/items/${index + 1}`} 
+                  to={`/items/${item.id}`} 
                   className="block px-4 py-4 sm:px-6 hover:bg-gray-50"
                 >
                   <div className="flex items-center justify-between">
