@@ -1,10 +1,13 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const ListSection = ({ items = [], onCategorySelect }) => {
+const ListSection = ({ items = [], onCategorySelect, onItemClick }) => {
   const navigate = useNavigate();
 
   const handleItemClick = (itemId) => {
+    // Call the onItemClick handler if provided
+    onItemClick?.(itemId);
+    // Navigate to the item detail page
     navigate(`/item/${itemId}`);
   };
   return (
