@@ -17,6 +17,7 @@ const Header = ({ onSearch, onCategorySelect }) => {
           <SearchBar onSearch={onSearch} onCategorySelect={onCategorySelect} />
           <nav className="ml-6 flex items-center space-x-4">
             <Link to="/" className="text-gray-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 px-3 py-2 text-sm font-medium transition-colors">Home</Link>
+            <Link to="/feedback" className="text-gray-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 px-3 py-2 text-sm font-medium transition-colors">IoT Feedback</Link>
             <Link to="/about" className="text-gray-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 px-3 py-2 text-sm font-medium transition-colors">About</Link>
             <ThemeToggle />
           </nav>

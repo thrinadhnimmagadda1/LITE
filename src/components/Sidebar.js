@@ -22,7 +22,7 @@ ChartJS.register(
   Legend
 );
 
-const Sidebar = () => {
+const Sidebar = ({ onTechnologySelect, selectedTechnologies = [], onClearFilter }) => {
   const [feedback, setFeedback] = useState({
     name: '',
     email: '',
@@ -61,6 +61,17 @@ const Sidebar = () => {
       }
     }
   });
+
+  // List of available technology stacks
+  const technologies = [
+    'Technology1', 'Technology2', 'Technology3', 'Technology4',
+    'Technology5', 'Technology6', 'Technology7', 'Technology8'
+  ];
+
+  const handleTechnologyClick = (tech) => {
+    onTechnologySelect(tech);
+  
+  };
 
   const chartData = {
     labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
@@ -148,76 +159,92 @@ const Sidebar = () => {
   };
 
   return (
-    <div className="w-full md:w-1/3 lg:w-1/4 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6 transition-colors duration-200">
-        <h3 className="text-lg font-semibold mb-4 dark:text-white">Engagement Metrics</h3>
-        <div className="h-48">
-          <Line 
-            data={chartData} 
-            options={chartOptions}
-          />
+    <div className="w-full h-full space-y-6">
+      {/* Technology Stacks */}
+      <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 rounded-xl shadow-lg p-6 transition-all duration-300 border border-gray-100 dark:border-gray-700">
+        <div className="flex justify-between items-center mb-5">
+          <h3 className="text-lg font-bold text-gray-800 dark:text-white">Technology Stacks</h3>
+          {selectedTechnologies.length > 0 && (
+            <button 
+              onClick={onClearFilter}
+              className="text-xs font-medium px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50 transition-colors"
+            >
+              Clear All ({selectedTechnologies.length})
+            </button>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {technologies.map((tech, index) => (
+            <button
+              key={index}
+              onClick={() => handleTechnologyClick(tech)}
+              className={`px-4 py-3 rounded-lg transition-all shadow-sm ${
+                selectedTechnologies.includes(tech)
+                  ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-indigo-200 dark:shadow-indigo-800 transform -translate-y-0.5'
+                  : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 border border-gray-100 dark:border-gray-600 hover:border-indigo-200 dark:hover:border-indigo-500/50'
+              }`}
+            >
+              <span className="font-medium text-sm">{tech}</span>
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 transition-colors duration-200">
-        <h3 className="text-lg font-semibold mb-4 dark:text-white">Leave Feedback</h3>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
-            <input
-              type="text"
-              id="name"
-              value={feedback.name}
-              onChange={(e) => setFeedback({...feedback, name: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-gray-700 dark:text-white"
-              required
-            />
-          </div>
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
-            <input
-              type="email"
-              id="email"
-              value={feedback.email}
-              onChange={(e) => setFeedback({...feedback, email: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-gray-700 dark:text-white"
-              required
-            />
-          </div>
-          <div>
-            <label htmlFor="message" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Message</label>
-            <textarea
-              id="message"
-              rows="3"
-              value={feedback.message}
-              onChange={(e) => setFeedback({...feedback, message: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-gray-700 dark:text-white"
-              required
-            ></textarea>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Rating</label>
-            <div className="flex space-x-1">
-              {[1, 2, 3, 4, 5].map((star) => (
-                <button
-                  key={star}
-                  type="button"
-                  onClick={() => setFeedback({...feedback, rating: star})}
-                  className={`text-2xl ${star <= feedback.rating ? 'text-yellow-400' : 'text-gray-300 dark:text-gray-600'}`}
-                >
-                  ★
-                </button>
-              ))}
-            </div>
-          </div>
-          <button
-            type="submit"
-            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200 dark:bg-indigo-700 dark:hover:bg-indigo-600"
-            disabled={submitted}
-          >
-            {submitted ? 'Submitting...' : 'Submit Feedback'}
-          </button>
-        </form>
+      {/* Engagement Metrics */}
+      <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 rounded-xl shadow-lg p-6 transition-all duration-300 border border-gray-100 dark:border-gray-700">
+        <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-5">Evolution</h3>
+        <div className="h-56">
+          <Line 
+            data={chartData} 
+            options={{
+              ...chartOptions,
+              backgroundColor: 'rgba(99, 102, 241, 0.05)',
+              borderColor: 'rgba(99, 102, 241, 0.8)',
+              plugins: {
+                ...chartOptions.plugins,
+                legend: {
+                  display: false
+                },
+                tooltip: {
+                  backgroundColor: 'rgba(17, 24, 39, 0.9)',
+                  titleColor: 'white',
+                  bodyColor: 'white',
+                  borderColor: 'rgba(255, 255, 255, 0.1)',
+                  borderWidth: 1,
+                  padding: 12,
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+                }
+              },
+              scales: {
+                ...chartOptions.scales,
+                y: {
+                  ...chartOptions.scales.y,
+                  grid: {
+                    color: 'rgba(0, 0, 0, 0.05)'
+                  },
+                  ticks: {
+                    color: '#6B7280',
+                    font: {
+                      size: 12
+                    }
+                  }
+                },
+                x: {
+                  ...chartOptions.scales.x,
+                  grid: {
+                    display: false
+                  },
+                  ticks: {
+                    color: '#6B7280',
+                    font: {
+                      size: 12
+                    }
+                  }
+                }
+              }
+            }}
+          />
+        </div>
       </div>
     </div>
   );
