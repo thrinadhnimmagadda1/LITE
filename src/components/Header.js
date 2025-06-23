@@ -1,26 +1,108 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import SearchBar from './SearchBar';
 import ThemeToggle from './ThemeToggle';
-import logo from '../logo.svg';
 
-const Header = ({ onSearch, onCategorySelect }) => {
+const Header = ({
+  searchTerm,
+  onSearchChange,
+  onSearchSubmit,
+  allPrimaryTechnologies,
+  selectedPrimaryTech,
+  onPrimaryTechChange,
+  allSecondaryTechnologies,
+  selectedSecondaryTech,
+  onSecondaryTechChange,
+  onClearFilters
+}) => {
   return (
-    <header className="bg-white dark:bg-gray-800 shadow-sm transition-colors duration-200">
+    <header className="bg-white dark:bg-gray-800 shadow-sm transition-colors duration-200 sticky top-0 z-10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center py-4">
+        {/* Top row with logo and navigation */}
+        <div className="flex justify-between items-center py-3 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center">
             <Link to="/" className="flex items-center">
               <span className="ml-2 text-xl font-semibold text-gray-900 dark:text-white">Evolution</span>
             </Link>
           </div>
-          <SearchBar onSearch={onSearch} onCategorySelect={onCategorySelect} />
-          <nav className="ml-6 flex items-center space-x-4">
-            <Link to="/" className="text-gray-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 px-3 py-2 text-sm font-medium transition-colors">Home</Link>
-            <Link to="/feedback" className="text-gray-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 px-3 py-2 text-sm font-medium transition-colors">IoT Feedback</Link>
-            <Link to="/about" className="text-gray-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 px-3 py-2 text-sm font-medium transition-colors">About</Link>
+          <nav className="flex items-center space-x-4">
+            <Link to="/" className="text-gray-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 px-3 py-2 text-sm font-medium transition-colors">
+              Home
+            </Link>
+            <Link to="/feedback" className="text-gray-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 px-3 py-2 text-sm font-medium transition-colors">
+              Feedback
+            </Link>
+            <Link to="/about" className="text-gray-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 px-3 py-2 text-sm font-medium transition-colors">
+              About
+            </Link>
             <ThemeToggle />
           </nav>
+        </div>
+
+        {/* Search and filters row */}
+        <div className="py-3">
+          <form onSubmit={onSearchSubmit} className="space-y-3">
+            <div className="flex flex-col md:flex-row gap-3">
+              {/* Search input */}
+              <div className="flex-1">
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => onSearchChange(e.target.value)}
+                  placeholder="Search papers by title, author, or keywords..."
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+              
+              {/* Primary Technology Dropdown */}
+              <div className="w-full md:w-64">
+                <select
+                  value={selectedPrimaryTech}
+                  onChange={(e) => onPrimaryTechChange(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                >
+                  <option value="">All Primary Technologies</option>
+                  {allPrimaryTechnologies.map((tech, index) => (
+                    <option key={`primary-${index}`} value={tech}>
+                      {tech}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              {/* Secondary Technology Dropdown */}
+              <div className="w-full md:w-64">
+                <select
+                  value={selectedSecondaryTech}
+                  onChange={(e) => onSecondaryTechChange(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                >
+                  <option value="">All Secondary Technologies</option>
+                  {allSecondaryTechnologies.map((tech, index) => (
+                    <option key={`secondary-${index}`} value={tech}>
+                      {tech}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="flex space-x-2">
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors whitespace-nowrap"
+                >
+                  Apply Filters
+                </button>
+                <button
+                  type="button"
+                  onClick={onClearFilters}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors whitespace-nowrap"
+                >
+                  Clear All
+                </button>
+              </div>
+            </div>
+          </form>
         </div>
       </div>
     </header>

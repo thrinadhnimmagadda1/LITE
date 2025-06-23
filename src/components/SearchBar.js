@@ -1,16 +1,11 @@
-import React, { useState } from 'react';
-import { categories } from '../constants/categories';
+import { useState } from 'react';
 
-const SearchBar = ({ onSearch, onCategorySelect }) => {
+const SearchBar = ({ onSearch }) => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleSubmit = (e) => {
     e.preventDefault();
     onSearch(searchQuery);
-  };
-
-  const handleCategoryClick = (category) => {
-    onCategorySelect?.(category);
   };
 
   return (
@@ -30,8 +25,6 @@ const SearchBar = ({ onSearch, onCategorySelect }) => {
           Search
         </button>
       </form>
-      
-      
     </div>
   );
 };

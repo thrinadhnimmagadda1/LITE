@@ -62,15 +62,29 @@ const ListSection = ({ items = [], onCategorySelect, onItemClick }) => {
                   {item.line1}
                 </p>
 
-                <div className="flex flex-wrap gap-2 pt-1">
-                  {item.technologies?.map((tech, techIndex) => (
-                    <span
-                      key={techIndex}
-                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
-                    >
-                      {tech}
-                    </span>
-                  ))}
+                <div className="flex flex-col gap-2 pt-1">
+                  <div className="flex flex-wrap gap-2">
+                    {item.technologies?.map((tech, techIndex) => (
+                      <span
+                        key={`tech-${techIndex}`}
+                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
+                      >
+                        {tech}
+                      </span>
+                    ))}
+                  </div>
+                  {item.secondaryTechnologies && item.secondaryTechnologies.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {item.secondaryTechnologies.map((tech, techIndex) => (
+                        <span
+                          key={`sec-tech-${techIndex}`}
+                          className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200"
+                        >
+                          {tech}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <p className="text-sm text-gray-600 line-clamp-2">
