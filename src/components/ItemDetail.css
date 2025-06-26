@@ -1,0 +1,81 @@
+/* ItemDetail.css */
+
+/* Main container */
+.item-detail-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+/* Paper header */
+.paper-header {
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.paper-title {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 0.5rem;
+}
+
+/* Metadata section */
+.metadata-section {
+  margin: 2rem 0;
+}
+
+.metadata-section h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 1rem;
+}
+
+/* Abstract section */
+.abstract-section {
+  margin: 2rem 0;
+  line-height: 1.6;
+  color: #4b5563;
+}
+
+/* Action buttons */
+.action-buttons {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .paper-title {
+    font-size: 1.5rem;
+  }
+  
+  .action-buttons {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .action-buttons button {
+    width: 100%;
+  }
+}
+
+/* Dark mode support */
+.dark .paper-title,
+.dark .metadata-section h2 {
+  color: #f3f4f6;
+}
+
+.dark .abstract-section {
+  color: #d1d5db;
+}
+
+.dark .metadata-section,
+.dark .action-buttons {
+  border-color: #374151;
+}

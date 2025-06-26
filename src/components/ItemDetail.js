@@ -1,15 +1,69 @@
+import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { FaExternalLinkAlt } from 'react-icons/fa';
+import { fetchPaperById } from '../services/api';
+import './ItemDetail.css';
 
 const ItemDetail = ({ items = [] }) => {
   const { id } = useParams();
   const navigate = useNavigate();
   const numericId = parseInt(id, 10);
-  const currentItem = items.find(item => item.id === numericId);
+  const [currentItem, setCurrentItem] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [csvData, setCsvData] = useState([]);
+
+  // Load paper data
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setIsLoading(true);
+        const data = await fetchPaperById(id);
+        setCurrentItem(data);
+        setError(null);
+      } catch (err) {
+        console.error('Failed to load paper data:', err);
+        setError('Failed to load paper data. Please try again later.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (id) {
+      fetchData();
+    }
+  }, [id]);
 
   const formatDate = (dateString) => {
     const options = { year: 'numeric', month: 'long' };
     return new Date(dateString).toLocaleDateString(undefined, options);
   };
+
+  if (isLoading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Loading...</h2>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">{error}</h2>
+          <Link 
+            to="/" 
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          >
+            Back to Papers List
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (!currentItem) {
     return (
@@ -42,8 +96,17 @@ const ItemDetail = ({ items = [] }) => {
                 {currentItem.title}
               </h1>
               <p className="mt-1 max-w-2xl text-sm text-gray-500">
-                {formatDate(currentItem.line2.replace('Date : ', ''))}
+                {currentItem.line2 ? formatDate(currentItem.line2.replace('Date: ', '')) : 'Date not available'}
               </p>
+              {currentItem.categories && currentItem.categories.length > 0 && (
+                <div className="mt-2">
+                  {currentItem.categories.map((category, index) => (
+                    <span key={index} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mr-2">
+                      {category}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="mt-4 sm:mt-0">
               <Link
@@ -81,23 +144,48 @@ const ItemDetail = ({ items = [] }) => {
             </div>
           )}
           
-          <div className="mb-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-2">Abstract</h2>
-            <p className="text-gray-700">{currentItem.line3}</p>
+          <div className="mt-6">
+            <h2 className="text-lg font-medium text-gray-900 dark:text-white">Abstract</h2>
+            <p className="mt-2 text-gray-600 dark:text-gray-300 whitespace-pre-line">
+              {currentItem.line3 || 'No abstract available'}
+            </p>
+          </div>
+          
+          <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-4">
+            <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Paper Details</h2>
+            
+            <div className="space-y-3">
+              {currentItem.line1 && (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Authors</h3>
+                  <p className="mt-1 text-gray-900 dark:text-white">{currentItem.line1}</p>
+                </div>
+              )}
+              
+              {currentItem.line2 && (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Published</h3>
+                  <p className="mt-1 text-gray-900 dark:text-white">{currentItem.line2.replace('Date: ', '')}</p>
+                </div>
+              )}
+              
+              {currentItem.line4 && (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Source</h3>
+                  <a 
+                    href={currentItem.line4} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="mt-1 inline-flex items-center text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    View Full Paper <FaExternalLinkAlt className="ml-1 h-4 w-4" />
+                  </a>
+                </div>
+              )}
+            </div>
           </div>
 
-          {currentItem.line4 && (
-            <div className="mt-8">
-              <h2 className="text-lg font-medium text-gray-900 mb-4">Full Paper</h2>
-              <div className="border-2 border-gray-200 rounded-lg overflow-hidden">
-                <iframe 
-                  src={currentItem.line4} 
-                  className="w-full h-[800px]"
-                  title="Paper Content"
-                ></iframe>
-              </div>
-            </div>
-          )}
+          
           
           <div className="mt-8 pt-6 border-t border-gray-200">
             <div className="flex justify-between">

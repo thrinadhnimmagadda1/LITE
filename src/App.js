@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
-import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { BrowserRouter as Router, Routes, Route, useParams, Link, useNavigate, useLocation } from 'react-router-dom';
+import { fetchPapers } from './services/api';
 import { ThemeProvider } from './context/ThemeContext';
 import { Line } from 'react-chartjs-2';
 import {
@@ -29,119 +30,129 @@ ChartJS.register(
   Filler
 );
 
-// Sample data for the application
-const items = [
-  {
-    id: 1,
-    title: 'Item 1 - Advanced Machine Learning',
-    line1: 'John Doe',
-    line2: 'Date: 2023-01-15',
-    line3: 'Abstract: This paper explores advanced techniques in machine learning and their applications...',
-    line4: 'https://arxiv.org/abs/2206.00001',
-    technologies: ["Large language models", "LLMs", "GPT", "BERT", "transformers"],
-    secondaryTechnologies: ['Neural Networks', 'Supervised Learning', 'Reinforcement Learning']
-  },
-  {
-    id: 2,
-    title: 'Item 2 - Blockchain Revolution',
-    line1: 'Jane Smith',
-    line2: 'Date: 2023-02-20',
-    line3: 'Abstract: Understanding the impact of blockchain technology on modern finance...',
-    line4: 'https://arxiv.org/abs/2206.00002',
-    technologies: ["BERT", "transformers"],
-    secondaryTechnologies: ['Smart Contracts', 'Ethereum', 'Solidity', 'DeFi']
-  },
-  {
-    id: 3,
-    title: 'Item 3 - Quantum Computing Basics',
-    line1: 'Alice Johnson',
-    line2: 'Date: 2023-03-10',
-    line3: 'Abstract: An introduction to quantum computing principles and qubits...',
-    line4: 'https://arxiv.org/abs/2206.00003',
-    technologies: ["Large language models", "LLMs", "GPT"],
-    secondaryTechnologies: ['Quantum Gates', 'Quantum Algorithms', 'Superposition']
-  },
-  {
-    id: 4,
-    title: 'Item 4 - The Future of AI',
-    line1: 'Bob Williams',
-    line2: 'Date: 2023-03-25',
-    line3: 'Abstract: Exploring the future possibilities and ethical considerations of AI...',
-    line4: 'https://arxiv.org/abs/2206.00004',
-    technologies: ["LLMs", "GPT"],
-    secondaryTechnologies: ['Neural Networks', 'Deep Learning', 'AI Safety']
-  },
-  {
-    id: 5,
-    title: 'Item 5 - Quantum Computing Fundamentals',
-    line1: 'Michael Brown',
-    line2: 'Date: 2023-04-05',
-    line3: 'Abstract: Introduction to quantum computing principles and their implications for the future.',
-    line4: 'https://arxiv.org/abs/2206.00005',
-    technologies: ["Large language models", "LLMs", "GPT"],
-    secondaryTechnologies: ['Quantum Supremacy', 'Quantum Hardware', 'Quantum Software']
-  }
-];
-
 function App() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedPrimaryTech, setSelectedPrimaryTech] = useState('');
-  const [selectedSecondaryTech, setSelectedSecondaryTech] = useState('');
-  const [filteredItems, setFilteredItems] = useState([...items]);
-  const [recentSearches, setRecentSearches] = useState([]);
+  const [items, setItems] = useState([]);
+  const [filteredItems, setFilteredItems] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [chartData, setChartData] = useState({
     labels: [],
     datasets: []
   });
 
-  // Initialize chart data
+  // Load data on component mount
   useEffect(() => {
-    // Generate sample data for the chart
-    const days = 30;
-    const baseDate = new Date();
-    baseDate.setDate(baseDate.getDate() - days);
-    
-    const labels = Array.from({ length: days }, (_, i) => {
-      const date = new Date(baseDate);
-      date.setDate(date.getDate() + i);
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    });
-
-    const generateData = (min, max, volatility) => {
-      let lastValue = (min + max) / 2;
-      return Array.from({ length: days }, () => {
-        const changePercent = (Math.random() * 2 - 1) * volatility;
-        lastValue = Math.max(min, Math.min(max, lastValue * (1 + changePercent)));
-        return Math.round(lastValue * 10) / 10;
-      });
+    const loadData = async () => {
+      try {
+        console.log('Fetching papers from API...');
+        const papers = await fetchPapers();
+        console.log('Received papers:', papers.length);
+        
+        if (!papers || !Array.isArray(papers)) {
+          throw new Error('Invalid data format received from API');
+        }
+        
+        const formattedItems = papers.map(paper => ({
+          id: paper.id,
+          title: paper.Title || 'Untitled',
+          line1: paper.Authors || 'Unknown Author',
+          line2: `Date: ${paper['Published Date'] || 'N/A'}`,
+          line3: paper.Abstract || 'No abstract available',
+          line4: paper.URL || '#',
+          categories: paper.Categories ? paper.Categories.split(';').map(cat => cat.trim()) : []
+        }));
+        
+        console.log('Formatted items:', formattedItems.length);
+        setItems(formattedItems);
+        setFilteredItems(formattedItems);
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Error loading data:', error);
+        console.error('Error details:', {
+          message: error.message,
+          stack: error.stack,
+          response: error.response
+        });
+        setIsLoading(false);
+      }
     };
 
+    loadData();
+  }, []);
+
+  const updateChartData = useCallback((items) => {
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth();
+    
+    // Create labels for the last 3 years, month by month
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const labels = [];
+    const papersPerMonth = [];
+    
+    // Initialize data for the last 3 years of months
+    for (let year = currentYear - 2; year <= currentYear; year++) {
+      const startMonth = (year === currentYear - 2) ? 0 : 0; // Start from January for all years
+      const endMonth = (year === currentYear) ? currentMonth : 11; // Current month for current year, else December
+      
+      for (let month = startMonth; month <= endMonth; month++) {
+        labels.push(`${monthNames[month]} ${year}`);
+        papersPerMonth.push(0);
+      }
+    }
+    
+    // Count papers per month
+    items.forEach(item => {
+      if (item.line2) {
+        const dateStr = item.line2.replace('Date: ', '').trim();
+        const paperDate = new Date(dateStr);
+        if (!isNaN(paperDate.getTime())) {
+          const paperYear = paperDate.getFullYear();
+          const paperMonth = paperDate.getMonth();
+          
+          // Only count if within our 3-year window
+          if (paperYear >= currentYear - 2 && paperYear <= currentYear) {
+            // Find the index in our labels array
+            const yearOffset = paperYear - (currentYear - 2);
+            const monthIndex = paperMonth + 
+              (paperYear > currentYear - 2 ? 12 * (paperYear - (currentYear - 2)) : 0);
+            
+            if (monthIndex >= 0 && monthIndex < papersPerMonth.length) {
+              papersPerMonth[monthIndex]++;
+            }
+          }
+        }
+      }
+    });
+    
     setChartData({
       labels,
       datasets: [
         {
-          label: 'Searches',
-          data: generateData(50, 200, 0.1),
-          borderColor: 'rgba(79, 70, 229, 1)',
-          backgroundColor: 'rgba(79, 70, 229, 0.1)',
-          tension: 0.4,
+          label: 'Papers Published',
+          data: papersPerMonth,
           fill: true,
-          pointRadius: 0
-        },
-        {
-          label: 'Views',
-          data: generateData(30, 150, 0.15),
-          borderColor: 'rgba(168, 85, 247, 1)',
-          backgroundColor: 'rgba(168, 85, 247, 0.1)',
+          backgroundColor: 'rgba(59, 130, 246, 0.2)',
+          borderColor: 'rgba(59, 130, 246, 1)',
           tension: 0.4,
-          fill: true,
-          pointRadius: 0
+          pointRadius: 4,
+          pointHoverRadius: 6
         }
       ]
     });
   }, []);
+
+  // Initialize chart data when items change
+  useEffect(() => {
+    if (items.length > 0) {
+      updateChartData(items);
+      setFilteredItems([...items]);
+      setIsSearching(false);
+    }
+  }, [items, updateChartData]);
 
   // Chart options
   const chartOptions = {
@@ -190,9 +201,14 @@ function App() {
         },
         ticks: {
           color: '#9CA3AF',
-          maxRotation: 0,
+          maxRotation: 45,
           autoSkip: true,
-          maxTicksLimit: 6
+          maxTicksLimit: 24
+        },
+        title: {
+          display: true,
+          text: 'Month / Year',
+          color: '#9CA3AF'
         }
       },
       y: {
@@ -202,100 +218,70 @@ function App() {
         },
         ticks: {
           color: '#9CA3AF',
-          callback: function(value) {
-            return value;
-          }
-        }
+          precision: 0,
+          stepSize: 1
+        },
+        title: {
+          display: true,
+          text: 'Number of Papers',
+          color: '#9CA3AF'
+        },
+        min: 0
       }
     },
     elements: {
       line: {
-        borderWidth: 2
+        borderWidth: 2,
+        tension: 0.1
+      },
+      point: {
+        radius: 2,
+        hoverRadius: 5,
+        hoverBorderWidth: 2
       }
     }
   };
 
-  // Update recent searches
-  const updateRecentSearches = (query) => {
-    if (!query.trim()) return;
-    
-    setRecentSearches(prev => {
-      const updatedSearches = prev.filter(item => item.query !== query);
-      return [
-        { query, timestamp: new Date().toISOString() },
-        ...updatedSearches.slice(0, 4) // Keep only the 5 most recent
-      ];
-    });
-  };
-
-  // Format time ago
-  const formatTimeAgo = (timestamp) => {
-    const now = new Date();
-    const searchTime = new Date(timestamp);
-    const diffInSeconds = Math.floor((now - searchTime) / 1000);
-    
-    if (diffInSeconds < 60) return 'just now';
-    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
-    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
-    return `${Math.floor(diffInSeconds / 86400)}d ago`;
-  };
-
-  // Get all unique primary and secondary technologies for filters
-  const allPrimaryTechnologies = [...new Set(items.flatMap(item => item.technologies || []))].sort();
-  const allSecondaryTechnologies = [...new Set(items.flatMap(item => item.secondaryTechnologies || []))].sort();
-
   const handleSearch = (e) => {
     if (e) e.preventDefault();
-    setIsSearching(true);
-    // Update recent searches
-    if (searchTerm.trim()) {
-      updateRecentSearches(searchTerm);
+    if (!searchTerm.trim()) {
+      setFilteredItems([...items]);
+      setIsSearching(false);
+      return;
     }
-    
-    // Apply filters and search
-    let results = [...items];
-    
-    if (searchTerm) {
-      const lowerQuery = searchTerm.toLowerCase();
-      results = results.filter(item => 
-        item.title.toLowerCase().includes(lowerQuery) ||
-        item.line1.toLowerCase().includes(lowerQuery) ||
-        item.line3.toLowerCase().includes(lowerQuery) ||
-        (item.technologies && item.technologies.some(tech => 
-          tech.toLowerCase().includes(lowerQuery)
-        )) ||
-        (item.secondaryTechnologies && item.secondaryTechnologies.some(tech => 
-          tech.toLowerCase().includes(lowerQuery)
-        ))
-      );
-    }
-
-    if (selectedPrimaryTech) {
-      results = results.filter(item => 
-        item.technologies && item.technologies.includes(selectedPrimaryTech)
-      );
-    }
-
-    if (selectedSecondaryTech) {
-      results = results.filter(item => 
-        item.secondaryTechnologies && item.secondaryTechnologies.includes(selectedSecondaryTech)
-      );
-    }
-
+    const lowerQuery = searchTerm.toLowerCase();
+    const results = items.filter(item =>
+      item.title.toLowerCase().includes(lowerQuery) ||
+      (item.line1 && item.line1.toLowerCase().includes(lowerQuery)) ||
+      (item.line3 && item.line3.toLowerCase().includes(lowerQuery)) ||
+      (item.categories && item.categories.some(cat =>
+        cat.toLowerCase().includes(lowerQuery)
+      ))
+    );
     setFilteredItems(results);
+    setIsSearching(true);
   };
 
-  const clearFilters = () => {
-    setSelectedPrimaryTech('');
-    setSelectedSecondaryTech('');
+  const clearSearch = () => {
     setSearchTerm('');
     setFilteredItems([...items]);
+    setIsSearching(false);
   };
 
-  const location = useLocation();
-  
-  // Check if we're on the home page to conditionally render the main content
   const isHomePage = location.pathname === '/';
+  
+  if (isLoading) {
+    return (
+      <ThemeProvider>
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+            <p className="mt-4 text-gray-600 dark:text-gray-400">Loading papers...</p>
+          </div>
+        </div>
+      </ThemeProvider>
+    );
+  }
 
   return (
     <ThemeProvider>
@@ -304,179 +290,52 @@ function App() {
           searchTerm={searchTerm}
           onSearchChange={setSearchTerm}
           onSearchSubmit={handleSearch}
-          allPrimaryTechnologies={allPrimaryTechnologies}
-          selectedPrimaryTech={selectedPrimaryTech}
-          onPrimaryTechChange={setSelectedPrimaryTech}
-          allSecondaryTechnologies={allSecondaryTechnologies}
-          selectedSecondaryTech={selectedSecondaryTech}
-          onSecondaryTechChange={setSelectedSecondaryTech}
-          onClearFilters={() => {
-            setSearchTerm('');
-            setSelectedPrimaryTech('');
-            setSelectedSecondaryTech('');
-            setFilteredItems([...items]);
-            setIsSearching(false);
-            navigate('/');
-          }}
+          onClearSearch={clearSearch}
         />
         
         <Routes>
           <Route path="/" element={
             <div>
               <main className="container mx-auto px-4 py-6">
-                {/* Compact Graph Section at Top */}
+                {/* Graph Section */}
                 <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-4 mb-6">
-                  <h2 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">Search Analytics</h2>
-                  <div className="h-40">
-                    <Line data={chartData} options={{
-                      ...chartOptions,
-                      maintainAspectRatio: false,
-                      responsive: true,
-                      plugins: {
-                        ...chartOptions.plugins,
-                        legend: {
-                          display: false
-                        }
-                      },
-                      scales: {
-                        ...chartOptions.scales,
-                        x: {
-                          ...chartOptions.scales?.x,
-                          grid: {
-                            display: false
-                          },
-                          ticks: {
-                            maxRotation: 0,
-                            autoSkip: true,
-                            maxTicksLimit: 6
-                          }
-                        },
-                        y: {
-                          ...chartOptions.scales?.y,
-                          grid: {
-                            display: false
-                          },
-                          ticks: {
-                            maxTicks: 5
-                          }
-                        }
-                      }
-                    }} />
+                  <h2 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">Paper Publications</h2>
+                  <div className="h-64">
+                    <Line data={chartData} options={chartOptions} />
                   </div>
                 </div>
-                
-                <div className="flex flex-col lg:flex-row gap-6">
-                  {/* Left Column - Main Content */}
+
+                {/* Papers List */}
+                <div className="w-full">
                   <div className="flex-1">
-                    {!isSearching ? (
+                    {isSearching && filteredItems.length === 0 ? (
                       <div className="text-center py-12">
-                        <h1 className="text-4xl font-bold text-gray-800 dark:text-white mb-4">Research Paper Explorer</h1>
-                        <p className="text-xl text-gray-600 dark:text-gray-300">
-                          Use the search and filters above to find research papers
+                        <h2 className="text-2xl font-semibold text-gray-700 dark:text-gray-200 mb-2">No papers found</h2>
+                        <p className="text-gray-500 dark:text-gray-400">
+                          Try different search terms
                         </p>
                       </div>
                     ) : (
-                      <div className="space-y-6">
-                        {filteredItems.length > 0 ? (
-                          <div>
-                            <h2 className="text-2xl font-semibold text-gray-800 dark:text-white mb-6">
-                              {filteredItems.length} {filteredItems.length === 1 ? 'result' : 'results'} found
-                            </h2>
-                            <div className="space-y-6">
-                              {filteredItems.map((item) => (
-                                <div 
-                                  key={item.id} 
-                                  className="bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-200 cursor-pointer"
-                                  onClick={() => navigate(`/item/${item.id}`)}
-                                >
-                                  <div className="p-6">
-                                    <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-2">
-                                      {item.title}
-                                    </h3>
-                                    <p className="text-gray-600 dark:text-gray-300 mb-3">
-                                      {item.line1} • {new Date(item.line2.replace('Date : ', '')).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
-                                    </p>
-                                    <p className="text-gray-700 dark:text-gray-200 mb-4 line-clamp-2">
-                                      {item.line3}
-                                    </p>
-                                    
-                                    <div className="flex flex-wrap gap-2 mb-2">
-                                      {item.technologies?.map((tech, idx) => (
-                                        <span 
-                                          key={`${item.id}-tech-${idx}`}
-                                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-100"
-                                        >
-                                          {tech}
-                                        </span>
-                                      ))}
-                                    </div>
-                                    
-                                    {item.secondaryTechnologies && item.secondaryTechnologies.length > 0 && (
-                                      <div className="flex flex-wrap gap-2">
-                                        {item.secondaryTechnologies.map((tech, idx) => (
-                                          <span 
-                                            key={`${item.id}-sectech-${idx}`}
-                                            className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-100 border border-purple-200 dark:border-purple-700"
-                                          >
-                                            {tech}
-                                          </span>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
+                      <div className="space-y-4">
+                        {filteredItems.map((item) => (
+                          <div 
+                            key={item.id}
+                            className="bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden cursor-pointer"
+                            onClick={() => navigate(`/item/${item.id}`)}
+                          >
+                            <div className="p-4">
+                              <h3 className="text-lg font-medium text-gray-900 dark:text-white">{item.title}</h3>
+                              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                {item.line1} • {item.line2}
+                              </p>
+                              <p className="mt-2 text-gray-600 dark:text-gray-300 line-clamp-2">
+                                {item.line3}
+                              </p>
                             </div>
                           </div>
-                        ) : (
-                          <div className="text-center py-16 bg-white dark:bg-gray-800 rounded-xl shadow-md">
-                            <h2 className="text-2xl font-semibold text-gray-800 dark:text-white mb-2">No results found</h2>
-                            <p className="text-gray-600 dark:text-gray-400">
-                              Try adjusting your search or filter criteria
-                            </p>
-                          </div>
-                        )}
+                        ))}
                       </div>
                     )}
-                  </div>
-
-                  {/* Right Column - Recent Searches */}
-                  <div className="lg:w-80 flex-shrink-0">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 sticky top-24">
-                      <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Recent Searches</h2>
-                      {recentSearches.length > 0 ? (
-                        <div className="space-y-3">
-                          {recentSearches.map((search, index) => (
-                            <button
-                              key={index}
-                              onClick={() => {
-                                setSearchTerm(search.query);
-                                const results = items.filter(item => 
-                                  item.title.toLowerCase().includes(search.query.toLowerCase()) ||
-                                  item.line1.toLowerCase().includes(search.query.toLowerCase()) ||
-                                  item.line3.toLowerCase().includes(search.query.toLowerCase()) ||
-                                  (item.technologies && item.technologies.some(t => 
-                                    t.toLowerCase().includes(search.query.toLowerCase())
-                                  ))
-                                );
-                                setFilteredItems(results);
-                                setIsSearching(true);
-                              }}
-                              className="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200 flex items-center justify-between"
-                            >
-                              <span className="truncate">{search.query}</span>
-                              <span className="ml-2 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                                {formatTimeAgo(search.timestamp)}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-gray-500 dark:text-gray-400 text-sm">
-                          Your recent searches will appear here
-                        </p>
-                      )}
-                    </div>
                   </div>
                 </div>
               </main>
