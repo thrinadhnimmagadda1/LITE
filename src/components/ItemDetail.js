@@ -12,6 +12,7 @@ const ItemDetail = ({ items = [] }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [csvData, setCsvData] = useState([]);
+  
 
   // Load paper data
   useEffect(() => {
@@ -19,6 +20,7 @@ const ItemDetail = ({ items = [] }) => {
       try {
         setIsLoading(true);
         const data = await fetchPaperById(id);
+        if(!data){throw new Error('Paper not found');}
         setCurrentItem(data);
         setError(null);
       } catch (err) {
@@ -54,12 +56,10 @@ const ItemDetail = ({ items = [] }) => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="text-center">
           <h2 className="text-2xl font-bold text-gray-900 mb-4">{error}</h2>
-          <Link 
-            to="/" 
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-          >
-            Back to Papers List
-          </Link>
+          <button
+          onClick={() => navigate('/')}
+          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+        >Back to Papers List</button>
         </div>
       </div>
     );
@@ -70,12 +70,12 @@ const ItemDetail = ({ items = [] }) => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="text-center">
           <h2 className="text-2xl font-bold text-gray-900 mb-4">Paper not found</h2>
-          <Link 
-            to="/" 
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-          >
+          <button
+          onClick={() => navigate('/')} 
+          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+        >
             Back to Papers List
-          </Link>
+          </button>
         </div>
       </div>
     );

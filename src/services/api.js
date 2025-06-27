@@ -1,27 +1,63 @@
-const API_BASE_URL = '/api';
+const API_BASE_URL = 'http://localhost:5001/api';
 
 export const fetchPapers = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/papers`);
+    console.log('Fetching papers from:', `${API_BASE_URL}/papers`);
+    const response = await fetch(`${API_BASE_URL}/papers`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+    });
+    
+    console.log('Response status:', response.status);
+    
     if (!response.ok) {
-      throw new Error('Failed to fetch papers');
+      const errorData = await response.text();
+      console.error('Error response:', errorData);
+      throw new Error(`Failed to fetch papers: ${response.status} ${response.statusText}`);
     }
-    return await response.json();
+    
+    const data = await response.json();
+    console.log('Fetched papers:', data.length);
+    return data;
   } catch (error) {
-    console.error('Error fetching papers:', error);
+    console.error('Error in fetchPapers:', {
+      message: error.message,
+      stack: error.stack,
+    });
     throw error;
   }
 };
 
 export const fetchPaperById = async (id) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/papers/${id}`);
+    console.log(`Fetching paper ${id} from:`, `${API_BASE_URL}/papers/${id}`);
+    const response = await fetch(`${API_BASE_URL}/papers/${id}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+    });
+    
+    console.log('Response status:', response.status);
+    
     if (!response.ok) {
-      throw new Error('Failed to fetch paper');
+      const errorData = await response.text();
+      console.error('Error response:', errorData);
+      throw new Error(`Failed to fetch paper: ${response.status} ${response.statusText}`);
     }
-    return await response.json();
+    
+    const data = await response.json();
+    console.log('Fetched paper:', data.id);
+    return data;
   } catch (error) {
-    console.error(`Error fetching paper ${id}:`, error);
+    console.error(`Error in fetchPaperById(${id}):`, {
+      message: error.message,
+      stack: error.stack,
+    });
     throw error;
   }
 };
