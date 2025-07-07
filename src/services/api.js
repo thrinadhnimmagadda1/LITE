@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:5001/api';
+const API_BASE_URL = '/api';
 
 export const fetchPapers = async () => {
   try {
@@ -12,6 +12,7 @@ export const fetchPapers = async () => {
     });
     
     console.log('Response status:', response.status);
+    console.log('Response headers:', Object.fromEntries([...response.headers.entries()]));
     
     if (!response.ok) {
       const errorData = await response.text();

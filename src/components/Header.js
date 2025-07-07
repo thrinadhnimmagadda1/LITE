@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import ThemeToggle from './ThemeToggle';
+
 
 const Header = ({
   searchTerm,
@@ -28,7 +28,7 @@ const Header = ({
             <Link to="/about" className="text-gray-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 px-3 py-2 text-sm font-medium transition-colors">
               About
             </Link>
-            <ThemeToggle />
+            {/* <TemeToggle /> */}
           </nav>
         </div>
 

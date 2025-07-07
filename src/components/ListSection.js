@@ -1,14 +1,33 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const ListSection = ({ items = [], onCategorySelect, onItemClick }) => {
   const navigate = useNavigate();
+  const [expandedId, setExpandedId] = useState(null);
 
-  const handleItemClick = (itemId) => {
-    // Call the onItemClick handler if provided
-    onItemClick?.(itemId);
-    // Navigate to the item detail page
-    navigate(`/item/${itemId}`);
+  const toggleAbstract = (e, itemId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('Toggle abstract for item:', itemId, 'Current expandedId:', expandedId);
+    setExpandedId(prevId => {
+      const newId = prevId === itemId ? null : itemId;
+      console.log('Setting expandedId to:', newId);
+      return newId;
+    });
+  };
+
+  const handleItemClick = (e, itemId) => {
+    // Check if the click is on the abstract toggle or content
+    const isAbstractClick = e.target.closest('.abstract-toggle') || 
+                           e.target.closest('.abstract-content');
+    
+    console.log('Item clicked:', itemId, 'Is abstract click:', isAbstractClick);
+    
+    if (!isAbstractClick) {
+      console.log('Navigating to item:', itemId);
+      onItemClick?.(itemId);
+      navigate(`/item/${itemId}`);
+    }
   };
   return (
     <div className="space-y-6">
@@ -41,10 +60,10 @@ const ListSection = ({ items = [], onCategorySelect, onItemClick }) => {
           <div 
             key={index} 
             className="bg-white rounded-lg shadow overflow-hidden hover:shadow-md transition-shadow duration-200"
-            onClick={() => handleItemClick(item.id)}
+            onClick={(e) => handleItemClick(e, item.id)}
             role="button"
             tabIndex={0}
-            onKeyDown={(e) => e.key === 'Enter' && handleItemClick(item.id)}
+            onKeyDown={(e) => e.key === 'Enter' && handleItemClick(e, item.id)}
             style={{ cursor: 'pointer' }}
           >
             <div className="p-6">
@@ -62,9 +81,9 @@ const ListSection = ({ items = [], onCategorySelect, onItemClick }) => {
                   {item.line1}
                 </p>
 
-                <div className="flex flex-col gap-2 pt-1">
-                  <div className="flex flex-wrap gap-2">
-                    {item.technologies?.map((tech, techIndex) => (
+                {item.technologies?.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {item.technologies.map((tech, techIndex) => (
                       <span
                         key={`tech-${techIndex}`}
                         className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
@@ -73,29 +92,48 @@ const ListSection = ({ items = [], onCategorySelect, onItemClick }) => {
                       </span>
                     ))}
                   </div>
-                  {item.secondaryTechnologies && item.secondaryTechnologies.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {item.secondaryTechnologies.map((tech, techIndex) => (
-                        <span
-                          key={`sec-tech-${techIndex}`}
-                          className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200"
-                        >
-                          {tech}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                )}
 
-                <p className="text-sm text-gray-600 line-clamp-2">
-                  {item.line3}
-                </p>
-
-                <div className="flex justify-end">
-                  <span className="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-500">
-                    Read more →
+                <div className="flex justify-between items-center mt-3">
+                  <button
+                    onClick={(e) => toggleAbstract(e, item.id)}
+                    className="abstract-toggle flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-500 focus:outline-none transition-colors duration-200"
+                    aria-expanded={expandedId === item.id}
+                    aria-controls={`abstract-${item.id}`}
+                  >
+                    {expandedId === item.id ? (
+                      <>
+                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                        </svg>
+                        Hide Abstract
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                        Read Abstract
+                      </>
+                    )}
+                  </button>
+                  <span className="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-500 transition-colors duration-200">
+                    Read full paper →
                   </span>
                 </div>
+                
+                {expandedId === item.id && item.line3 && (
+                  <div 
+                    id={`abstract-${item.id}`}
+                    className="abstract-content mt-3 p-4 bg-gray-50 rounded-md border border-gray-200 transition-all duration-300 ease-in-out" 
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <h4 className="text-sm font-medium text-gray-800 mb-2">Abstract:</h4>
+                    <p className="text-sm text-gray-700 whitespace-pre-line">
+                      {item.line3}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
