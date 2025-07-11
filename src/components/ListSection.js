@@ -31,28 +31,7 @@ const ListSection = ({ items = [], onCategorySelect, onItemClick }) => {
   };
   return (
     <div className="space-y-6">
-      {/* Search and Filter Section
-      <div className="bg-white shadow overflow-hidden rounded-lg p-4 mb-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div className="w-full sm:w-1/2">
-            <input
-              type="text"
-              placeholder="Search papers..."
-              className="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-              onChange={(e) => onCategorySelect?.(e.target.value)}
-            />
-          </div>
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-gray-600">Filter by:</span>
-            <select className="border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
-              <option>All Categories</option>
-              <option>Planning</option>
-              <option>LLM Integration</option>
-              <option>Benchmarking</option>
-            </select>
-          </div>
-        </div>
-      </div> */}
+      
 
       {/* Papers List */}
       <div className="space-y-6">
@@ -117,9 +96,15 @@ const ListSection = ({ items = [], onCategorySelect, onItemClick }) => {
                       </>
                     )}
                   </button>
-                  <span className="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-500 transition-colors duration-200">
+                  <a 
+                    href={item.line4} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-500 transition-colors duration-200"
+                    onClick={e => e.stopPropagation()}
+                  >
                     Read full paper →
-                  </span>
+                  </a>
                 </div>
                 
                 {expandedId === item.id && item.line3 && (

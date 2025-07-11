@@ -15,7 +15,7 @@ const Header = ({
         <div className="flex justify-between items-center py-3 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center">
             <Link to="/" className="flex items-center">
-              <span className="ml-2 text-xl font-semibold text-gray-900 dark:text-white">Evolution</span>
+              <span className="ml-2 text-xl font-semibold text-gray-900 dark:text-white">Literature Evolution Analysis Dashboard for a Subject - LITE</span>
             </Link>
           </div>
           <nav className="flex items-center space-x-4">
