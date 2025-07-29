@@ -107,7 +107,7 @@ const ListSection = ({ items = [], onCategorySelect, onItemClick }) => {
                   </a>
                 </div>
                 
-                {expandedId === item.id && item.line3 && (
+                {expandedId === item.id && (item.abstract || item.line3) && (
                   <div 
                     id={`abstract-${item.id}`}
                     className="abstract-content mt-3 p-4 bg-gray-50 rounded-md border border-gray-200 transition-all duration-300 ease-in-out" 
@@ -115,7 +115,7 @@ const ListSection = ({ items = [], onCategorySelect, onItemClick }) => {
                   >
                     <h4 className="text-sm font-medium text-gray-800 mb-2">Abstract:</h4>
                     <p className="text-sm text-gray-700 whitespace-pre-line">
-                      {item.line3}
+                      {item.abstract || item.line3 || 'No abstract available'}
                     </p>
                   </div>
                 )}

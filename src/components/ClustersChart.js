@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -21,78 +21,86 @@ ChartJS.register(
 );
 
 const ClustersChart = ({ items }) => {
-  // Count papers per category
-  const categoryCounts = {};
-  
-  items.forEach(item => {
-    if (item.categories && Array.isArray(item.categories)) {
-      item.categories.forEach(category => {
-        categoryCounts[category] = (categoryCounts[category] || 0) + 1;
-      });
-    }
-  });
+  // Process cluster data
+  const { sortedClusters, totalPapers } = useMemo(() => {
+    const counts = {};
+    let total = 0;
+    
+    // Count papers in each cluster
+    items.forEach(item => {
+      // Get cluster ID, defaulting to -1 if not available
+      const clusterId = item.cluster !== undefined ? item.cluster : 
+                       (item.Cluster !== undefined ? item.Cluster : -1);
+      
+      const clusterKey = `Cluster ${clusterId}`;
+      counts[clusterKey] = (counts[clusterKey] || 0) + 1;
+      total++;
+    });
+    
+    // Convert to array and sort by cluster ID
+    const sorted = Object.entries(counts)
+      .sort(([a], [b]) => a.localeCompare(b));
+    
+    return {
+      sortedClusters: sorted,
+      totalPapers: total
+    };
+  }, [items]);
 
-  // Sort categories by count (descending) and take top 10
-  const sortedCategories = Object.entries(categoryCounts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10);
-
-  const chartData = {
-    labels: sortedCategories.map(([category]) => category),
+  // Bar chart data
+  const barChartData = {
+    labels: sortedClusters.map(([cluster]) => cluster),
     datasets: [
       {
         label: 'Number of Papers',
-        data: sortedCategories.map(([_, count]) => count),
+        data: sortedClusters.map(([_, count]) => count),
         backgroundColor: [
-          'rgba(255, 99, 132, 0.6)',
           'rgba(54, 162, 235, 0.6)',
+          'rgba(255, 99, 132, 0.6)',
           'rgba(255, 206, 86, 0.6)',
           'rgba(75, 192, 192, 0.6)',
           'rgba(153, 102, 255, 0.6)',
-          'rgba(255, 159, 64, 0.6)',
-          'rgba(199, 199, 199, 0.6)',
-          'rgba(83, 102, 255, 0.6)',
-          'rgba(40, 159, 64, 0.6)',
-          'rgba(210, 99, 132, 0.6)'
+          'rgba(255, 159, 64, 0.6)'
         ],
         borderColor: [
-          'rgba(255, 99, 132, 1)',
           'rgba(54, 162, 235, 1)',
+          'rgba(255, 99, 132, 1)',
           'rgba(255, 206, 86, 1)',
           'rgba(75, 192, 192, 1)',
           'rgba(153, 102, 255, 1)',
-          'rgba(255, 159, 64, 1)',
-          'rgba(159, 159, 159, 1)',
-          'rgba(83, 102, 255, 1)',
-          'rgba(40, 159, 64, 1)',
-          'rgba(210, 99, 132, 1)'
+          'rgba(255, 159, 64, 1)'
         ],
         borderWidth: 1,
       },
-    ],
+    ]
   };
 
-  const options = {
+  const barChartOptions = {
     responsive: true,
-    maintainAspectRatio: false,
-    layout: {
-      padding: 0,
-      autoPadding: false
-    },
+    maintainAspectRatio: true,
+    aspectRatio: 1.5,
     plugins: {
       legend: {
-        display: false,
+        display: false
+      },
+      tooltip: {
+        callbacks: {
+          label: function(context) {
+            const count = context.parsed.y;
+            const percentage = ((count / totalPapers) * 100).toFixed(1);
+            return `${count} papers (${percentage}%)`;
+          }
+        }
       },
       title: {
         display: true,
-        text: 'Top 10 Research Categories',
+        text: 'Papers per Cluster',
         font: {
-          size: 16
+          size: 16,
+          weight: 'bold'
         },
-        padding: {
-          bottom: 10
-        }
-      },
+        padding: { bottom: 15 }
+      }
     },
     scales: {
       y: {
@@ -104,6 +112,7 @@ const ClustersChart = ({ items }) => {
         },
         ticks: {
           precision: 0,
+          stepSize: 1,
           padding: 5
         },
         grid: {
@@ -111,27 +120,38 @@ const ClustersChart = ({ items }) => {
         }
       },
       x: {
+        title: {
+          display: true,
+          text: 'Cluster ID',
+          padding: { top: 10, bottom: 0 }
+        },
         ticks: {
           autoSkip: false,
-          maxRotation: 45,
-          minRotation: 45,
-          padding: 0
+          maxRotation: 0,
+          minRotation: 0,
+          padding: 10
         },
         grid: {
           display: false,
           drawBorder: false
         }
       }
+    },
+    animation: {
+      duration: 1000
     }
   };
 
+
+
   return (
-    <div className="h-64 w-full -mx-2 px-2">
-      <Bar 
-        data={chartData} 
-        options={options} 
-        style={{ width: '100%', height: '100%' }}
-      />
+    <div className="w-full bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+      <div className="h-96">
+        <Bar 
+          data={barChartData} 
+          options={barChartOptions}
+        />
+      </div>
     </div>
   );
 };
