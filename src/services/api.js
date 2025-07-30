@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:5001/api'; // Updated port to match Django backend
+const API_BASE_URL = 'http://localhost:8000/api'; // Updated port to match Django backend
 
 /**
  * Fetches papers data including clustering information from the backend
@@ -328,33 +328,128 @@ export const fetchPapers = async () => {
   }
 };
 
+/**
+ * Updates search terms and triggers paper processing
+ * @param {string} searchTerm - Comma-separated list of search terms
+ * @returns {Promise<Object>} Response from the server with processing status
+ */
 export const updateSearchTerms = async (searchTerm) => {
   try {
     console.log('Updating search terms with:', searchTerm);
+    
     // Convert the search term to an array as expected by the backend
-    const searchTerms = searchTerm.split(',').map(term => term.trim());
-    const response = await fetch(`${API_BASE_URL}/search-terms/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ search_terms: searchTerms }),
-    });
+    const searchTerms = searchTerm.split(',').map(term => term.trim()).filter(term => term);
     
-    console.log('Update search terms response status:', response.status);
-    
-    if (!response.ok) {
-      const errorData = await response.text();
-      console.error('Error updating search terms:', errorData);
-      throw new Error(`Failed to update search terms: ${response.status} ${response.statusText}`);
+    if (searchTerms.length === 0) {
+      throw new Error('Please provide at least one valid search term');
     }
     
-    return await response.json();
+    console.log('Formatted search terms:', searchTerms);
+    
+    const url = `${API_BASE_URL}/search-terms/`;
+    console.log('Sending request to:', url);
+    
+    const requestBody = { search_terms: searchTerms };
+    console.log('Request body:', requestBody);
+    
+    const startTime = Date.now();
+    let response;
+    
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        credentials: 'include',
+        mode: 'cors',
+        body: JSON.stringify(requestBody),
+      });
+      
+      console.log(`Request completed in ${Date.now() - startTime}ms`);
+      console.log('Response status:', response.status, response.statusText);
+      
+      // Log response headers for debugging
+      const responseHeaders = {};
+      response.headers.forEach((value, key) => {
+        responseHeaders[key] = value;
+      });
+      console.log('Response headers:', responseHeaders);
+      
+      // Get response text first to handle potential JSON parse errors
+      const responseText = await response.text();
+      console.log('Raw response text:', responseText);
+      
+      let responseData;
+      try {
+        responseData = responseText ? JSON.parse(responseText) : {};
+      } catch (parseError) {
+        console.error('Failed to parse JSON response:', parseError, 'Response text:', responseText);
+        throw new Error(`Invalid JSON response from server: ${parseError.message}`);
+      }
+      
+      console.log('Parsed response data:', responseData);
+      
+      if (!response.ok) {
+        console.error('Error response from server:', {
+          status: response.status,
+          statusText: response.statusText,
+          data: responseData,
+        });
+        
+        const errorMessage = responseData.error || 
+                            responseData.detail || 
+                            response.statusText || 
+                            `Request failed with status ${response.status}`;
+        
+        throw new Error(errorMessage);
+      }
+      
+      // If we have a CSV file in the response, fetch the updated papers
+      if (responseData.csv_file || responseData.papers_processed) {
+        console.log('Backend processing complete:', responseData);
+        return responseData;
+      }
+      
+      // If no CSV file but we have a warning (e.g., no papers found)
+      if (responseData.warning) {
+        console.warn('Warning from server:', responseData.warning);
+        return responseData;
+      }
+      
+      // If we get here, the response format is unexpected
+      console.warn('Unexpected response format from server:', responseData);
+      return responseData;
+      
+    } catch (networkError) {
+      console.error('Network error during updateSearchTerms:', {
+        message: networkError.message,
+        stack: networkError.stack,
+        url,
+        method: 'POST',
+      });
+      
+      // Provide more detailed error message for network issues
+      if (networkError.name === 'TypeError' && networkError.message.includes('Failed to fetch')) {
+        throw new Error('Failed to connect to the server. Please check your internet connection and try again.');
+      }
+      
+      throw networkError;
+    }
+    
   } catch (error) {
     console.error('Error in updateSearchTerms:', {
       message: error.message,
       stack: error.stack,
+      searchTerm,
     });
+    
+    // Rethrow with a more user-friendly message if needed
+    if (error.message.includes('Failed to fetch')) {
+      throw new Error('Failed to connect to the server. Please try again later.');
+    }
+    
     throw error;
   }
 };

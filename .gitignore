@@ -18,6 +18,52 @@
 .env.test.local
 .env.production.local
 
+# Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+.env
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Backend specific
+/backend/scripts/out/*
+/backend/scripts/logs/*
+!/backend/scripts/out/.gitkeep
+!/backend/scripts/logs/.gitkeep

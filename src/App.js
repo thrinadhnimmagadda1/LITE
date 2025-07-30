@@ -312,74 +312,88 @@ function App() {
 
   // Handle search submission
   const handleSearch = useCallback(async (searchValue) => {
+    console.log('Search initiated with value:', searchValue);
+    
     // If searchValue is an event object (from direct form submission), prevent default
     if (searchValue && typeof searchValue.preventDefault === 'function') {
       searchValue.preventDefault();
-      return;
+      // Get the search query from the input element
+      const inputElement = searchValue.target.querySelector('input[type="text"]');
+      searchValue = inputElement ? inputElement.value : '';
     }
     
-    // If searchValue is not provided, use the current searchTerm
-    const searchQuery = typeof searchValue === 'string' ? searchValue : searchTerm;
+    // Get the search query from the input
+    const query = typeof searchValue === 'string' ? searchValue : searchValue?.target?.value || '';
+    console.log('Processed search query:', query);
     
-    if (!searchQuery || !searchQuery.trim()) {
+    if (!query.trim()) {
+      // If search is empty, show all items
+      console.log('Empty search query, showing all items');
       setFilteredItems([...items]);
-      setIsSearching(false);
-      setSelectedMonthIndex(null);
+      setSearchTerm('');
       return;
     }
+    
+    setIsSearching(true);
+    setSearchTerm(query);
     
     try {
-      // Update search terms in the backend
-      await updateSearchTerms(searchQuery);
-      console.log('Successfully updated search terms');
+      // Show loading state
+      setItems([]);
+      setFilteredItems([]);
       
-      // Reload papers to get updated data based on new search terms
-      await loadPapers();
+      console.log('Updating search terms in backend...');
+      // Update search terms in the backend and process papers
+      const response = await updateSearchTerms(query);
+      console.log('Backend response:', response);
       
-      // Apply client-side filtering
-      const lowerQuery = searchQuery.toLowerCase();
-      const results = items.filter(item => {
+      // Handle different response formats
+      if (response.warning) {
+        // Handle case where no papers were found
+        console.warn('Warning from backend:', response.warning);
+        setItems([]);
+        setFilteredItems([]);
+        // You might want to show this message to the user
+        alert(response.warning); // Temporary alert for debugging
+        return;
+      }
+      
+      // If we get a CSV file in the response, fetch the updated papers
+      if (response.csv_file || response.papers_processed) {
+        console.log('Fetching updated papers...');
+        // Add a small delay to ensure the backend has time to process
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
         try {
-          return (
-            (item.title && item.title.toLowerCase().includes(lowerQuery)) ||
-            (item.line1 && item.line1.toLowerCase().includes(lowerQuery)) ||
-            (item.line3 && item.line3.toLowerCase().includes(lowerQuery)) ||
-            (item.categories && Array.isArray(item.categories) && item.categories.some(cat => 
-              cat && typeof cat === 'string' && cat.toLowerCase().includes(lowerQuery)
-            )) ||
-            (item.Cluster && typeof item.Cluster === 'string' && item.Cluster.toLowerCase().includes(lowerQuery))
-          );
-        } catch (error) {
-          console.error('Error filtering items:', error, item);
-          return false;
+          const data = await fetchPapers();
+          console.log('Fetched papers data:', data);
+          
+          // Handle different response formats
+          const papers = data.papers || data || [];
+          
+          if (papers.length === 0) {
+            console.warn('No papers found in the response');
+            alert('No papers found matching your search criteria');
+          } else {
+            console.log(`Found ${papers.length} papers`);
+          }
+          
+          setItems(papers);
+          setFilteredItems(papers);
+          updateChartData(papers);
+        } catch (fetchError) {
+          console.error('Error fetching updated papers:', fetchError);
+          alert(`Error loading papers: ${fetchError.message}`);
         }
-      });
-      
-      setFilteredItems(results);
-      setIsSearching(true);
+      } else {
+        console.warn('Unexpected response format from server:', response);
+        alert('Unexpected response from server. Please try again.');
+      }
     } catch (error) {
-      console.error('Failed to update search terms:', error);
-      // Continue with local search if updating terms fails
-      const lowerQuery = searchQuery.toLowerCase();
-      const results = items.filter(item => {
-        try {
-          return (
-            (item.title && item.title.toLowerCase().includes(lowerQuery)) ||
-            (item.line1 && item.line1.toLowerCase().includes(lowerQuery)) ||
-            (item.line3 && item.line3.toLowerCase().includes(lowerQuery)) ||
-            (item.categories && Array.isArray(item.categories) && item.categories.some(cat => 
-              cat && typeof cat === 'string' && cat.toLowerCase().includes(lowerQuery)
-            )) ||
-            (item.Cluster && typeof item.Cluster === 'string' && item.Cluster.toLowerCase().includes(lowerQuery))
-          );
-        } catch (error) {
-          console.error('Error filtering items:', error, item);
-          return false;
-        }
-      });
-      
-      setFilteredItems(results);
-      setIsSearching(true);
+      console.error('Search error:', error);
+      alert(`Search error: ${error.message}`);
+    } finally {
+      setIsSearching(false);
     }
   }, [items, searchTerm]);
   
