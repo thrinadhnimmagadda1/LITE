@@ -20,32 +20,50 @@ ChartJS.register(
   Legend
 );
 
-const ClustersChart = ({ items }) => {
+const ClustersChart = ({ items = [] }) => {
   // Process cluster data
   const { sortedClusters, totalPapers } = useMemo(() => {
+    // Initialize with default values
     const counts = {};
     let total = 0;
     
-    // Count papers in each cluster
-    items.forEach(item => {
-      // Get cluster ID, defaulting to -1 if not available
-      const clusterId = item.cluster !== undefined ? item.cluster : 
-                       (item.Cluster !== undefined ? item.Cluster : -1);
-      
-      const clusterKey = `Cluster ${clusterId}`;
-      counts[clusterKey] = (counts[clusterKey] || 0) + 1;
-      total++;
-    });
+    // Ensure items is an array before iterating
+    if (Array.isArray(items)) {
+      // Count papers in each cluster
+      items.forEach(item => {
+        if (!item) return; // Skip null/undefined items
+        
+        // Get cluster ID, defaulting to -1 if not available
+        const clusterId = item.cluster !== undefined ? item.cluster : 
+                         (item.Cluster !== undefined ? item.Cluster : -1);
+        
+        const clusterKey = `Cluster ${clusterId}`;
+        counts[clusterKey] = (counts[clusterKey] || 0) + 1;
+        total++;
+      });
+    }
     
     // Convert to array and sort by cluster ID
-    const sorted = Object.entries(counts)
-      .sort(([a], [b]) => a.localeCompare(b));
+    const sorted = Object.entries(counts).length > 0 
+      ? Object.entries(counts).sort(([a], [b]) => a.localeCompare(b))
+      : [['No Data', 0]]; // Default empty state
     
     return {
       sortedClusters: sorted,
-      totalPapers: total
+      totalPapers: total || 1 // Prevent division by zero
     };
   }, [items]);
+
+  // Ensure we have valid data before rendering
+  if (!Array.isArray(items) || items.length === 0) {
+    return (
+      <div className="w-full bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <div className="h-96 flex items-center justify-center">
+          <p className="text-gray-500 dark:text-gray-400">No cluster data available</p>
+        </div>
+      </div>
+    );
+  }
 
   // Bar chart data
   const barChartData = {

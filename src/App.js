@@ -4,22 +4,90 @@ import { ThemeProvider } from './context/ThemeContext';
 import PublicationsChart from './components/PublicationsChart';
 import ClustersChart from './components/ClustersChart';
 import ListSection from './components/ListSection';
+import SearchPage from './components/SearchPage';
 import Header from './components/Header';
 import './App.css';
 
 function App() {
   // State management
   const [searchTerm, setSearchTerm] = useState('');
+  const [hasSearched, setHasSearched] = useState(false);
   const [activeTab, setActiveTab] = useState('papers');
   const [items, setItems] = useState([]);
   const [filteredItems, setFilteredItems] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [selectedMonthIndex, setSelectedMonthIndex] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState(null);
+  const [selectedPaper, setSelectedPaper] = useState(null);
   const [chartData, setChartData] = useState({
     labels: [],
     datasets: []
   });
+
+  // Handler for when a month is selected in the publications chart
+  const handleMonthSelect = useCallback((monthIndex) => {
+    setSelectedMonthIndex(prevIndex => 
+      prevIndex === monthIndex ? null : monthIndex
+    );
+    
+    if (monthIndex !== null && items.length > 0) {
+      // Filter items for the selected month
+      const filtered = items.filter(item => {
+        if (!item || !item.line2) return false;
+        try {
+          const dateStr = item.line2.replace('Published:', '').trim();
+          const paperDate = new Date(dateStr);
+          return paperDate.getMonth() === monthIndex % 12 && 
+                 paperDate.getFullYear() === (new Date()).getFullYear() - Math.floor(monthIndex / 12);
+        } catch (e) {
+          return false;
+        }
+      });
+      setFilteredItems(filtered);
+    } else {
+      // Reset to show all items if no month is selected
+      setFilteredItems(items);
+    }
+  }, [items]);
+
+  // Handler for when a paper is selected from the clusters chart
+  const handlePaperSelect = useCallback((paperId) => {
+    if (!paperId) {
+      setSelectedPaper(null);
+      return;
+    }
+    
+    const paper = items.find(item => item.id === paperId || item.paper_id === paperId);
+    if (paper) {
+      setSelectedPaper(paper);
+      // Scroll to the selected paper in the list
+      const element = document.getElementById(`paper-${paperId}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        element.classList.add('ring-2', 'ring-indigo-500');
+        setTimeout(() => {
+          element.classList.remove('ring-2', 'ring-indigo-500');
+        }, 2000);
+      }
+    }
+  }, [items]);
+
+  // Handler for category selection
+  const handleCategorySelect = useCallback((category) => {
+    setSelectedCategory(prevCategory => 
+      prevCategory === category ? null : category
+    );
+    
+    if (category) {
+      const filtered = items.filter(item => 
+        item.categories && item.categories.includes(category)
+      );
+      setFilteredItems(filtered);
+    } else {
+      setFilteredItems(items);
+    }
+  }, [items]);
 
   // Update chart data when items change
   const updateChartData = useCallback((items) => {
@@ -319,7 +387,54 @@ function App() {
       searchValue.preventDefault();
       // Get the search query from the input element
       const inputElement = searchValue.target.querySelector('input[type="text"]');
-      searchValue = inputElement ? inputElement.value : '';
+      searchValue = inputElement ? inputElement.value : searchValue;
+    }
+    
+    if (!searchValue.trim()) return;
+    
+    setHasSearched(true);
+    setIsLoading(true);
+    setSearchTerm(searchValue);
+    
+    try {
+      // Call the backend API to update search terms
+      await updateSearchTerms(searchValue);
+      
+      // Fetch the updated papers
+      const papers = await fetchPapers();
+      setItems(papers);
+      setFilteredItems(papers);
+      
+      // Update chart data
+      const labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const currentYear = new Date().getFullYear();
+      const counts = Array(12).fill(0);
+      
+      papers.forEach(paper => {
+        if (paper.published_date) {
+          const date = new Date(paper.published_date);
+          if (date.getFullYear() === currentYear) {
+            counts[date.getMonth()]++;
+          }
+        }
+      });
+      
+      setChartData({
+        labels,
+        datasets: [
+          {
+            label: 'Publications',
+            data: counts,
+            backgroundColor: 'rgba(99, 102, 241, 0.6)',
+            borderColor: 'rgba(99, 102, 241, 1)',
+            borderWidth: 1,
+          },
+        ],
+      });
+    } catch (error) {
+      console.error('Error during search:', error);
+    } finally {
+      setIsLoading(false);
     }
     
     // Get the search query from the input
@@ -343,57 +458,71 @@ function App() {
       setFilteredItems([]);
       
       console.log('Updating search terms in backend...');
-      // Update search terms in the backend and process papers
-      const response = await updateSearchTerms(query);
-      console.log('Backend response:', response);
       
-      // Handle different response formats
-      if (response.warning) {
-        // Handle case where no papers were found
-        console.warn('Warning from backend:', response.warning);
-        setItems([]);
-        setFilteredItems([]);
-        // You might want to show this message to the user
-        alert(response.warning); // Temporary alert for debugging
-        return;
-      }
-      
-      // If we get a CSV file in the response, fetch the updated papers
-      if (response.csv_file || response.papers_processed) {
-        console.log('Fetching updated papers...');
-        // Add a small delay to ensure the backend has time to process
-        await new Promise(resolve => setTimeout(resolve, 2000));
+      try {
+        // First update the search terms in the backend
+        const response = await updateSearchTerms(query);
+        console.log('Backend update response:', response);
         
-        try {
-          const data = await fetchPapers();
-          console.log('Fetched papers data:', data);
-          
-          // Handle different response formats
-          const papers = data.papers || data || [];
-          
-          if (papers.length === 0) {
-            console.warn('No papers found in the response');
-            alert('No papers found matching your search criteria');
-          } else {
-            console.log(`Found ${papers.length} papers`);
-          }
-          
-          setItems(papers);
-          setFilteredItems(papers);
-          updateChartData(papers);
-        } catch (fetchError) {
-          console.error('Error fetching updated papers:', fetchError);
-          alert(`Error loading papers: ${fetchError.message}`);
+        // Handle different response formats
+        if (response.warning) {
+          console.warn('Warning from backend:', response.warning);
+          alert(response.warning);
+          return;
         }
-      } else {
-        console.warn('Unexpected response format from server:', response);
-        alert('Unexpected response from server. Please try again.');
+        
+        // Poll for new results with retries
+        const maxRetries = 5;
+        let retryCount = 0;
+        let papers = [];
+        
+        while (retryCount < maxRetries) {
+          try {
+            console.log(`Fetching papers (attempt ${retryCount + 1}/${maxRetries})...`);
+            const data = await fetchPapers();
+            console.log('Fetched papers data:', data);
+            
+            // Handle different response formats
+            papers = Array.isArray(data) ? data : (data.papers || []);
+            
+            if (papers.length > 0) {
+              console.log(`Found ${papers.length} papers`);
+              break; // Exit the retry loop if we got papers
+            }
+            
+            // Wait before retrying
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            retryCount++;
+          } catch (fetchError) {
+            console.error(`Error fetching papers (attempt ${retryCount + 1}):`, fetchError);
+            if (retryCount >= maxRetries - 1) throw fetchError;
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            retryCount++;
+          }
+        }
+        
+        if (papers.length === 0) {
+          throw new Error('No papers found matching your search criteria');
+        }
+        
+        // Update state with the new papers
+        setItems(papers);
+        setFilteredItems(papers);
+        updateChartData(papers);
+        
+      } catch (error) {
+        console.error('Search error:', error);
+        alert(`Search error: ${error.message}`);
       }
+      
     } catch (error) {
-      console.error('Search error:', error);
-      alert(`Search error: ${error.message}`);
+      console.error('Search processing error:', error);
+      alert(`Error processing search: ${error.message}`);
     } finally {
       setIsSearching(false);
+      
+      // Force a re-render by updating a dummy state
+      setItems(prevItems => [...prevItems]);
     }
   }, [items, searchTerm]);
   
@@ -520,106 +649,114 @@ function App() {
     { id: 'clusters', label: 'Clusters' },
   ];
 
-  // Loading state
+  // Render loading state
   if (isLoading) {
     return (
-      <ThemeProvider>
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-            <p className="mt-4 text-gray-600 dark:text-gray-400">Loading papers...</p>
-          </div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-indigo-500 mx-auto mb-4"></div>
+          <p className="text-lg text-gray-700">Searching for research papers...</p>
         </div>
+      </div>
+    );
+  }
+
+  // Show search page if no search has been performed
+  if (!hasSearched) {
+    return (
+      <ThemeProvider>
+        <SearchPage onSearch={handleSearch} />
       </ThemeProvider>
     );
   }
 
+  // Show results after search
   return (
     <ThemeProvider>
-      <div className="min-h-screen bg-gray-100 dark:bg-gray-900 transition-colors duration-200">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
         <Header 
           searchTerm={searchTerm} 
-          onSearchChange={setSearchTerm}
-          onSearchSubmit={handleSearch}
-          onClearSearch={clearSearch}
-          onFilterByCluster={filterByCluster}
+          onSearch={handleSearch} 
+          onSearchTermChange={setSearchTerm}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          className="sticky top-0 z-10"
+          showBackButton={true}
+          onBack={() => setHasSearched(false)}
         />
         
-        <nav className="flex justify-center mb-4">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 rounded-md ${activeTab === tab.id ? 'bg-indigo-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'} transition-colors duration-200`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-        
-        <main className="w-full max-w-full px-0 py-8">
-          {activeTab === 'clusters' ? (
-            <ClustersChart items={isSearching ? filteredItems : items} />
-          ) : (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 mx-4">
-                <section className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-4 sm:p-6">
-                  <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Publication Timeline</h2>
-                    {isSearching && (
-                      <button
-                        onClick={clearMonthFilter}
-                        className="text-sm bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900 dark:hover:bg-indigo-800 text-indigo-700 dark:text-indigo-200 px-3 py-1 rounded-md flex items-center transition-colors"
-                      >
-                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        Show All Papers
-                      </button>
-                    )}
+        <main className="container mx-auto px-4 py-6">
+          <div className="space-y-8">
+            {activeTab === 'papers' && (
+              <>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+                      Publications Over Time
+                    </h2>
+                    <div className="h-80">
+                      <PublicationsChart 
+                        data={chartData} 
+                        onMonthSelect={handleMonthSelect}
+                        selectedMonthIndex={selectedMonthIndex}
+                      />
+                    </div>
                   </div>
                   
-                  <div className="h-64 w-full">
-                    <PublicationsChart 
-                      data={chartData}
-                      selectedMonthIndex={selectedMonthIndex}
-                      onMonthSelect={filterPapersByMonth}
-                      onClearSelection={clearMonthFilter}
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+                      Paper Clusters
+                    </h2>
+                    <div className="h-80">
+                      <ClustersChart 
+                        papers={items} 
+                        onPaperSelect={handlePaperSelect}
+                      />
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+                  <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                      Research Papers
+                    </h2>
+                  </div>
+                  {filteredItems && Array.isArray(filteredItems) && filteredItems.length > 0 ? (
+                    <ListSection 
+                      items={filteredItems} 
+                      onCategorySelect={handleCategorySelect}
+                      onItemClick={handlePaperSelect}
+                      key={`list-section-${filteredItems.length}-${Date.now()}`}
                     />
-                  </div>
-                  
-                  {isSearching && (
-                    <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                      {filteredItems.length > 0 
-                        ? `Showing ${filteredItems.length} papers from selected filter`
-                        : 'No papers found matching the current filter'}
+                  ) : (
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                      <p className="text-gray-500 dark:text-gray-400 text-center py-8">
+                        No papers found. Try a different search term.
+                      </p>
                     </div>
                   )}
-                </section>
-
-                <section className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-4 sm:p-6">
-                  <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Clusters</h2>
-                  <ClustersChart items={isSearching ? filteredItems : items} />
-                  <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                    Showing distribution of papers across {isSearching ? 'filtered' : 'all'} clusters
-                  </div>
-                </section>
-              </div>
-              
-              <section className="bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden">
-                <div className="p-6">
-                  <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">
-                    {isSearching ? 'Filtered Papers' : 'All Papers'}
-                  </h2>
-                  <ListSection 
-                    items={filteredItems} 
-                    selectedMonthIndex={selectedMonthIndex}
-                    chartData={chartData}
-                  />
                 </div>
-              </section>
-            </>
-          )}
+              </>
+            )}
+            
+            {activeTab === 'clusters' && (
+              <div className="space-y-8">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+                    Paper Clusters
+                  </h2>
+                  <div className="h-[600px]">
+                    <ClustersChart 
+                      papers={items} 
+                      onPaperSelect={handlePaperSelect}
+                      expandedView={true}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </main>
       </div>
     </ThemeProvider>

@@ -1,6 +1,120 @@
 const API_BASE_URL = 'http://localhost:8000/api'; // Updated port to match Django backend
 
 /**
+ * Processes raw paper data into a consistent format for the frontend
+ * @param {Array|Object} papersData - Raw papers data from the API
+ * @returns {Array} Processed array of paper objects
+ */
+const processPapersData = (papersData) => {
+  if (!papersData) return [];
+  
+  // Handle case where papersData is already an array
+  const papers = Array.isArray(papersData) ? papersData : 
+                (papersData.papers || []);
+  
+  return papers.map((paper, index) => {
+    try {
+      // Generate a unique ID if not provided
+      const id = paper.id || 
+                paper.URL || 
+                paper.url || 
+                `paper-${Date.now()}-${index}`;
+      
+      // Format the date if available
+      const formatDate = (dateStr) => {
+        if (!dateStr) return 'N/A';
+        try {
+          const date = new Date(dateStr);
+          if (isNaN(date.getTime())) return 'N/A';
+          return date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+          });
+        } catch (e) {
+          console.warn('Failed to format date:', dateStr, e);
+          return 'N/A';
+        }
+      };
+
+      // Format authors if available
+      const formatAuthors = (authors) => {
+        if (!authors) return 'Unknown Author';
+        if (Array.isArray(authors)) return authors.join(', ');
+        if (typeof authors === 'string') {
+          // Handle different author string formats
+          if (authors.includes(';')) return authors.split(';').map(a => a.trim()).join(', ');
+          if (authors.includes(' and ')) return authors.replace(/ and /g, ', ');
+          return authors;
+        }
+        return 'Unknown Author';
+      };
+      
+      // Extract abstract from various possible fields
+      const extractAbstract = (paper) => {
+        const possibleAbstractFields = [
+          'abstract', 'Abstract', 'summary', 'Summary', 'description', 'Description',
+          'abstractText', 'abstract_text', 'paperAbstract', 'paper_abstract'
+        ];
+        
+        for (const field of possibleAbstractFields) {
+          if (paper[field] && typeof paper[field] === 'string' && paper[field].trim()) {
+            return paper[field].trim();
+          }
+        }
+        
+        if (paper._original) {
+          for (const field of possibleAbstractFields) {
+            if (paper._original[field] && typeof paper._original[field] === 'string' && paper._original[field].trim()) {
+              return paper._original[field].trim();
+            }
+          }
+        }
+        
+        return 'No abstract available';
+      };
+
+      // Extract all relevant fields with fallbacks
+      const title = (paper.Title || paper.title || 'Untitled').trim();
+      const authors = formatAuthors(paper.Authors || paper.authors);
+      const published = formatDate(paper.published || paper.updated || paper['Published Date'] || paper.submitted_date);
+      const abstract = extractAbstract(paper);
+      const url = paper.URL || paper.url || paper.pdf_url || (paper.arxiv_id ? `https://arxiv.org/abs/${paper.arxiv_id}` : '#');
+      const categories = paper.Categories || paper.categories || '';
+      const cluster = paper.Cluster || paper.cluster || 'Uncategorized';
+      
+      return {
+        id: id,
+        title: title,
+        authors: authors,
+        published: published,
+        abstract: abstract,
+        url: url,
+        categories: categories,
+        cluster: cluster,
+        ...(paper.x !== undefined && { x: paper.x }),
+        ...(paper.y !== undefined && { y: paper.y }),
+        ...(paper.cluster_label && { cluster_label: paper.cluster_label }),
+        _original: paper
+      };
+    } catch (error) {
+      console.error('Error processing paper:', { error, paper });
+      return {
+        id: `error-${Date.now()}-${index}`,
+        title: 'Error loading paper',
+        authors: 'Unknown',
+        published: 'N/A',
+        abstract: 'Failed to load paper data',
+        url: '#',
+        categories: '',
+        cluster: 'Error',
+        _original: paper
+      };
+    }
+  });
+};
+
+/**
  * Fetches papers data including clustering information from the backend
  * @returns {Promise<Object>} Object containing papers and clustering data
  */
@@ -162,153 +276,21 @@ export const fetchPapers = async () => {
     // Log the first few papers for debugging
     console.log('Raw papers data from API (first 3):', papers.slice(0, 3));
     
-    // Transform papers to match the expected frontend format
-    const formattedPapers = papers.map((paper, index) => {
-      console.log(`Processing paper ${index}:`, paper); // Debug log
-      try {
-        // Generate a unique ID if not provided
-        const id = paper.id || 
-                  paper.URL || 
-                  paper.url || 
-                  `paper-${Date.now()}-${index}`;
-        
-        // Get cluster information
-        const clusterId = paper.cluster !== undefined ? paper.cluster : -1;
-        const clusterLabel = paper.cluster_label || `Cluster ${clusterId}`;
-        
-        // Format the date if available
-        const formatDate = (dateStr) => {
-          if (!dateStr) return 'N/A';
-          try {
-            const date = new Date(dateStr);
-            if (isNaN(date.getTime())) return 'N/A';
-            return date.toLocaleDateString('en-US', {
-              year: 'numeric',
-              month: 'short',
-              day: 'numeric'
-            });
-          } catch (e) {
-            console.warn('Failed to format date:', dateStr, e);
-            return 'N/A';
-          }
-        };
-
-        // Format authors if available
-        const formatAuthors = (authors) => {
-          if (!authors) return 'Unknown Author';
-          if (Array.isArray(authors)) return authors.join(', ');
-          if (typeof authors === 'string') {
-            // Handle different author string formats
-            if (authors.includes(';')) return authors.split(';').map(a => a.trim()).join(', ');
-            if (authors.includes(' and ')) return authors.replace(/ and /g, ', ');
-            return authors;
-          }
-          return 'Unknown Author';
-        };
-        
-        // Extract abstract from various possible fields
-        const extractAbstract = (paper) => {
-          // Try different possible field names for abstract
-          const possibleAbstractFields = [
-            'abstract', 'Abstract', 'summary', 'Summary', 'description', 'Description',
-            'abstractText', 'abstract_text', 'paperAbstract', 'paper_abstract'
-          ];
-          
-          for (const field of possibleAbstractFields) {
-            if (paper[field] && typeof paper[field] === 'string' && paper[field].trim()) {
-              console.log(`Found abstract in field: ${field}`);
-              return paper[field].trim();
-            }
-          }
-          
-          // If no abstract found in standard fields, check _original if it exists
-          if (paper._original) {
-            for (const field of possibleAbstractFields) {
-              if (paper._original[field] && typeof paper._original[field] === 'string' && paper._original[field].trim()) {
-                console.log(`Found abstract in _original.${field}`);
-                return paper._original[field].trim();
-              }
-            }
-          }
-          
-          console.log('No abstract found in paper:', { 
-            id: paper.id, 
-            title: paper.title,
-            availableFields: Object.keys(paper) 
-          });
-          return 'No abstract available';
-        };
-
-        // Extract all relevant fields with fallbacks
-        const title = (paper.Title || paper.title || 'Untitled').trim();
-        const authors = formatAuthors(paper.Authors || paper.authors);
-        const published = formatDate(paper.published || paper.updated || paper['Published Date'] || paper.submitted_date);
-        const abstract = extractAbstract(paper);
-        const url = paper.URL || paper.url || paper.pdf_url || (paper.arxiv_id ? `https://arxiv.org/abs/${paper.arxiv_id}` : '#');
-        const categories = paper.Categories || paper.categories || '';
-        const cluster = paper.Cluster || paper.cluster || 'Uncategorized';
-        
-        const formattedPaper = {
-          id: id,
-          title: title,
-          authors: authors,
-          published: published,
-          abstract: abstract,
-          url: url,
-          categories: categories,
-          cluster: cluster,
-          // Include any additional fields that might be useful
-          ...(paper.x !== undefined && { x: paper.x }),
-          ...(paper.y !== undefined && { y: paper.y }),
-          ...(paper.cluster_label && { cluster_label: paper.cluster_label }),
-          // Include the original paper data for debugging
-          _original: paper
-        };
-        
-        // Log if we couldn't find an abstract
-        if (abstract === 'No abstract available') {
-          console.warn('No abstract found for paper:', {
-            id: id,
-            title: title,
-            availableFields: Object.keys(paper),
-            paperData: paper // Include full paper data for debugging
-          });
-        }
-        
-        // Log a sample of the transformed data for debugging
-        if (index < 3) {
-          console.log(`Sample paper ${index + 1}:`, {
-            id: formattedPaper.id,
-            title: formattedPaper.title,
-            authors: formattedPaper.authors,
-            published: formattedPaper.published,
-            hasAbstract: !!(formattedPaper.abstract && formattedPaper.abstract !== 'No abstract available'),
-            url: formattedPaper.url
-          });
-        }
-        
-        return formattedPaper;
-      } catch (error) {
-        console.error('Error formatting paper:', {
-          error: error.message,
-          paper: paper
-        });
-        // Return a minimal valid paper object even if there's an error
-        return {
-          id: `error-${Date.now()}-${index}`,
-          title: 'Error loading paper',
-          authors: 'Unknown',
-          published: 'N/A',
-          abstract: 'There was an error loading this paper. Please try again later.',
-          url: '#',
-          categories: '',
-          cluster: 'Error',
-          _original: paper || {},
-          _error: error.message
-        };
-      }
+    // Process papers using the shared processing function
+    const formattedPapers = processPapersData(papers);
+    
+    // Log a sample of the transformed data for debugging
+    formattedPapers.slice(0, 3).forEach((paper, index) => {
+      console.log(`Sample paper ${index + 1}:`, {
+        id: paper.id,
+        title: paper.title,
+        authors: paper.authors,
+        published: paper.published,
+        hasAbstract: !!(paper.abstract && paper.abstract !== 'No abstract available'),
+        url: paper.url
+      });
     });
-
+    
     console.log('Successfully formatted papers with clustering data:', {
       papers: formattedPapers,
       clustering: responseWithClustering.clustering
@@ -329,6 +311,91 @@ export const fetchPapers = async () => {
 };
 
 /**
+ * Polls the server until processing is complete
+ * @param {string} taskId - The task ID to poll
+ * @param {number} [initialInterval=2000] - Initial polling interval in milliseconds
+ * @param {number} [maxAttempts=60] - Maximum number of polling attempts (default: 5 minutes with 5s interval)
+ * @param {number} [maxBackoff=30000] - Maximum polling interval in milliseconds
+ * @returns {Promise<Object>} The final result when processing is complete
+ */
+const pollForResults = async (taskId, initialInterval = 2000, maxAttempts = 60, maxBackoff = 30000) => {
+  let attempts = 0;
+  let currentInterval = initialInterval;
+  const startTime = Date.now();
+  
+  // Show initial loading message
+  console.log(`Starting to poll for results (max ${maxAttempts} attempts, ~${Math.round((maxAttempts * initialInterval) / 1000)}s max)`);
+  
+  while (attempts < maxAttempts) {
+    const attemptStartTime = Date.now();
+    const elapsedSeconds = Math.round((Date.now() - startTime) / 1000);
+    
+    try {
+      console.log(`[${elapsedSeconds}s] Checking for results (attempt ${attempts + 1}/${maxAttempts})...`);
+      
+      // Add a small delay before the first attempt
+      if (attempts > 0) {
+        await new Promise(resolve => setTimeout(resolve, currentInterval));
+      }
+      
+      // Using minimal headers to avoid CORS preflight
+      const response = await fetch(`${API_BASE_URL}/papers/?_t=${Date.now()}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      // Check if we have valid data (not just an empty array)
+      if (data && ((Array.isArray(data) && data.length > 0) || (data.papers && data.papers.length > 0))) {
+        const papers = Array.isArray(data) ? data : data.papers;
+        console.log(`[${elapsedSeconds}s] Found ${papers.length} papers`);
+        return { success: true, data: Array.isArray(data) ? data : data.papers };
+      }
+      
+      // Exponential backoff with jitter
+      const jitter = Math.random() * 1000; // Add up to 1s of jitter
+      currentInterval = Math.min(maxBackoff, currentInterval * 1.5 + jitter);
+      
+      console.log(`[${elapsedSeconds}s] No data yet. Next check in ${Math.round(currentInterval/1000)}s`);
+      
+    } catch (error) {
+      console.error(`[${elapsedSeconds}s] Error polling for results:`, error.message);
+      
+      // For network errors, use a longer backoff
+      if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+        currentInterval = Math.min(maxBackoff, currentInterval * 2);
+      }
+      
+      // Don't count network errors as attempts
+      if (!error.message.includes('Failed to fetch') && !error.message.includes('NetworkError')) {
+        attempts++;
+      }
+      
+      // If we get a 404, the endpoint might not be ready yet
+      if (error.message.includes('404')) {
+        currentInterval = Math.min(maxBackoff, currentInterval * 1.5);
+      }
+      
+      // Add some jitter to prevent thundering herd
+      const jitter = Math.random() * 1000;
+      await new Promise(resolve => setTimeout(resolve, currentInterval + jitter));
+      
+      continue;
+    }
+    
+    attempts++;
+  }
+  
+  const error = new Error(`Timed out after ${Math.round((Date.now() - startTime) / 1000)} seconds waiting for results`);
+  error.name = 'PollingTimeoutError';
+  error.attempts = attempts;
+  error.duration = Date.now() - startTime;
+  throw error;
+};
+
+/**
  * Updates search terms and triggers paper processing
  * @param {string} searchTerm - Comma-separated list of search terms
  * @returns {Promise<Object>} Response from the server with processing status
@@ -344,110 +411,64 @@ export const updateSearchTerms = async (searchTerm) => {
       throw new Error('Please provide at least one valid search term');
     }
     
-    console.log('Formatted search terms:', searchTerms);
+    // Clear any existing data first to show loading state
+    const clearResponse = await fetch(`${API_BASE_URL}/search-terms/clear/`, {
+      method: 'GET',  // The clear endpoint expects a GET request
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
     
-    const url = `${API_BASE_URL}/search-terms/`;
-    console.log('Sending request to:', url);
-    
-    const requestBody = { search_terms: searchTerms };
-    console.log('Request body:', requestBody);
-    
-    const startTime = Date.now();
-    let response;
-    
-    try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        credentials: 'include',
-        mode: 'cors',
-        body: JSON.stringify(requestBody),
-      });
-      
-      console.log(`Request completed in ${Date.now() - startTime}ms`);
-      console.log('Response status:', response.status, response.statusText);
-      
-      // Log response headers for debugging
-      const responseHeaders = {};
-      response.headers.forEach((value, key) => {
-        responseHeaders[key] = value;
-      });
-      console.log('Response headers:', responseHeaders);
-      
-      // Get response text first to handle potential JSON parse errors
-      const responseText = await response.text();
-      console.log('Raw response text:', responseText);
-      
-      let responseData;
-      try {
-        responseData = responseText ? JSON.parse(responseText) : {};
-      } catch (parseError) {
-        console.error('Failed to parse JSON response:', parseError, 'Response text:', responseText);
-        throw new Error(`Invalid JSON response from server: ${parseError.message}`);
-      }
-      
-      console.log('Parsed response data:', responseData);
-      
-      if (!response.ok) {
-        console.error('Error response from server:', {
-          status: response.status,
-          statusText: response.statusText,
-          data: responseData,
-        });
-        
-        const errorMessage = responseData.error || 
-                            responseData.detail || 
-                            response.statusText || 
-                            `Request failed with status ${response.status}`;
-        
-        throw new Error(errorMessage);
-      }
-      
-      // If we have a CSV file in the response, fetch the updated papers
-      if (responseData.csv_file || responseData.papers_processed) {
-        console.log('Backend processing complete:', responseData);
-        return responseData;
-      }
-      
-      // If no CSV file but we have a warning (e.g., no papers found)
-      if (responseData.warning) {
-        console.warn('Warning from server:', responseData.warning);
-        return responseData;
-      }
-      
-      // If we get here, the response format is unexpected
-      console.warn('Unexpected response format from server:', responseData);
-      return responseData;
-      
-    } catch (networkError) {
-      console.error('Network error during updateSearchTerms:', {
-        message: networkError.message,
-        stack: networkError.stack,
-        url,
-        method: 'POST',
-      });
-      
-      // Provide more detailed error message for network issues
-      if (networkError.name === 'TypeError' && networkError.message.includes('Failed to fetch')) {
-        throw new Error('Failed to connect to the server. Please check your internet connection and try again.');
-      }
-      
-      throw networkError;
+    if (!clearResponse.ok) {
+      console.warn('Failed to clear previous search terms, continuing anyway...');
+      // Don't throw error, as we can still proceed with the new search
     }
     
+    // Start the search process
+    const searchResponse = await fetch(`${API_BASE_URL}/search-terms/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ search_terms: searchTerms }),  // Match backend's expected field name
+    });
+    
+    if (!searchResponse.ok) {
+      let errorMessage = 'Failed to update search terms';
+      try {
+        const errorData = await searchResponse.json();
+        errorMessage = errorData.error || errorData.detail || errorMessage;
+      } catch (e) {
+        // If we can't parse the error response, use the status text
+        errorMessage = searchResponse.statusText || errorMessage;
+      }
+      throw new Error(errorMessage);
+    }
+    
+    // Start polling for results
+    console.log('Search started, waiting for results...');
+    const result = await pollForResults('search-task');
+    
+    if (result && result.success) {
+      // Process the new data
+      const processedData = await processPapersData(result.data || result);
+      return {
+        success: true,
+        message: 'Search completed successfully',
+        data: processedData
+      };
+    } else {
+      throw new Error(result?.error || 'Unknown error occurred during search');
+    }
   } catch (error) {
     console.error('Error in updateSearchTerms:', {
       message: error.message,
       stack: error.stack,
-      searchTerm,
     });
     
-    // Rethrow with a more user-friendly message if needed
-    if (error.message.includes('Failed to fetch')) {
-      throw new Error('Failed to connect to the server. Please try again later.');
+    // Re-throw the error with a more user-friendly message if possible
+    if (error.message.includes('Network Error')) {
+      throw new Error('Unable to connect to the server. Please check your internet connection and try again.');
     }
     
     throw error;

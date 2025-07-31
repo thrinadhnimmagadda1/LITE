@@ -24,26 +24,48 @@ import hdbscan
 
 warnings.filterwarnings("ignore", category=UserWarning, module="sentence_transformers")
 
-# The function loads the configuration
+# The function loads the configuration and adds dynamic date range
 def load_config() -> dict:
     # Find config.json in the parent directory of the scripts folder
     script_dir = os.path.dirname(os.path.abspath(__file__))
     base_dir = os.path.abspath(os.path.join(script_dir, os.pardir))
     cfg_path = os.path.join(base_dir, "config.json")
+    
+    # Load the config
     with open(cfg_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        config = json.load(f)
+    
+    # Calculate dynamic dates
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=365)  # One year ago
+    
+    # Update config with dynamic dates in YYYY-MM-DD format
+    config['start_date'] = start_date.strftime("%Y-%m-%d")
+    config['end_date'] = end_date.strftime("%Y-%m-%d")
+    
+    logging.info(f"Using dynamic date range: {config['start_date']} to {config['end_date']}")
+    return config
 
 # The function takes start and end date strings and returns a date range in YYYYMMDDHHMM TO YYYYMMDDHHMM format
 def format_date_range(start: Optional[str], end: Optional[str]) -> Optional[str]:
     if not (start and end):
         return None
     try:
-        s = datetime.strptime(start, "%Y-%m-%d").strftime("%Y%m%d0000")
-        e = datetime.strptime(end, "%Y-%m-%d").strftime("%Y%m%d2359")
-        logging.info("Using date range: %s → %s", s, e)
+        # Parse the dates
+        start_dt = datetime.strptime(start, "%Y-%m-%d")
+        end_dt = datetime.strptime(end, "%Y-%m-%d")
+        
+        # Format for arXiv API
+        s = start_dt.strftime("%Y%m%d0000")
+        e = end_dt.strftime("%Y%m%d2359")
+        
+        # Log the date range being used
+        date_range_str = f"{start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d')}"
+        logging.info(f"Using date range: {date_range_str}")
+        
         return f"[{s} TO {e}]"
     except ValueError as exc:
-        logging.error("Bad date in config: %s", exc)
+        logging.error(f"Error parsing date range: {exc}")
         return None
 
 # The function generates search queries with the primary and secondary focus keyword lists by first listing individually, then in combinations
@@ -160,29 +182,52 @@ def main():
     os.makedirs(LOG_DIR, exist_ok=True)
     os.makedirs(OUT_DIR, exist_ok=True)
     
-    # Configure logging
+    # Ensure log directory exists with proper permissions
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True, mode=0o755)
+    except Exception as e:
+        print(f"Error creating log directory {LOG_DIR}: {e}")
+        LOG_DIR = os.path.join(os.path.expanduser('~'), 'arxiv_logs')
+        os.makedirs(LOG_DIR, exist_ok=True, mode=0o755)
+        print(f"Using alternative log directory: {LOG_DIR}")
+    
+    # Configure logging with a timestamped log file
     log_file = os.path.join(LOG_DIR, f"arxiv_extractor_{datetime.now():%Y%m%d_%H%M%S}.log")
     
-    # Remove old log files before setting up new logging
+    # Remove old log files before creating a new one
     try:
         log_files = glob.glob(os.path.join(LOG_DIR, "arxiv_extractor_*.log"))
         for old_log in log_files:
             if old_log != log_file:  # Don't remove the new log file we're about to create
                 try:
                     os.remove(old_log)
+                    logging.info(f"Removed old log file: {os.path.basename(old_log)}")
                 except OSError as e:
                     print(f"Error removing log file {old_log}: {e}")
     except Exception as e:
         print(f"Error during log cleanup: {e}")
     
+    # Clear existing log handlers
+    logging.getLogger().handlers = []
+    
+    # Set up file handler
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)-8s | %(message)s"))
+    
+    # Set up console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)-8s | %(message)s"))
+    
+    # Configure root logger
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s | %(levelname)-8s | %(message)s",
-        handlers=[
-            logging.FileHandler(log_file, encoding='utf-8'),
-            logging.StreamHandler()
-        ]
+        handlers=[file_handler, console_handler],
+        force=True  # This will override any existing handlers
     )
+    
+    # Log the log file location
+    logging.info(f"Log file: {log_file}")
+    print(f"Logging to file: {log_file}")  # Always print log file location to console
     
     logging.info("Starting arXiv paper extraction")
     logging.info(f"Must include keywords: {must_kw}")
@@ -193,7 +238,7 @@ def main():
 
     client = arxiv.Client(
         page_size=100,  # Number of results per page
-        delay_seconds=3,  # Delay between API requests
+        delay_seconds=1,  # Delay between API requests
         num_retries=3    # Number of retries for failed requests
     )
     papers = []
