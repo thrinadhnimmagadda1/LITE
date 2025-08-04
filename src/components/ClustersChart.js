@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Bar } from 'react-chartjs-2';
+import axios from 'axios';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -20,156 +21,173 @@ ChartJS.register(
   Legend
 );
 
-const ClustersChart = ({ items = [] }) => {
-  // Process cluster data
-  const { sortedClusters, totalPapers } = useMemo(() => {
-    // Initialize with default values
-    const counts = {};
-    let total = 0;
-    
-    // Ensure items is an array before iterating
-    if (Array.isArray(items)) {
-      // Count papers in each cluster
-      items.forEach(item => {
-        if (!item) return; // Skip null/undefined items
-        
-        // Get cluster ID, defaulting to -1 if not available
-        const clusterId = item.cluster !== undefined ? item.cluster : 
-                         (item.Cluster !== undefined ? item.Cluster : -1);
-        
-        const clusterKey = `Cluster ${clusterId}`;
-        counts[clusterKey] = (counts[clusterKey] || 0) + 1;
-        total++;
-      });
-    }
-    
-    // Convert to array and sort by cluster ID
-    const sorted = Object.entries(counts).length > 0 
-      ? Object.entries(counts).sort(([a], [b]) => a.localeCompare(b))
-      : [['No Data', 0]]; // Default empty state
-    
-    return {
-      sortedClusters: sorted,
-      totalPapers: total || 1 // Prevent division by zero
-    };
-  }, [items]);
+const ClustersChart = () => {
+  const [chartData, setChartData] = useState({
+    labels: [],
+    datasets: [{
+      label: 'Papers per Cluster',
+      data: [],
+      backgroundColor: 'rgba(54, 162, 235, 0.6)',
+      borderColor: 'rgba(54, 162, 235, 1)',
+      borderWidth: 1,
+    }]
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Ensure we have valid data before rendering
-  if (!Array.isArray(items) || items.length === 0) {
+  // Generate colors based on the number of clusters
+  const generateColors = (count) => {
+    const colors = [];
+    const hueStep = 360 / Math.max(1, count);
+
+    for (let i = 0; i < count; i++) {
+      const hue = (i * hueStep) % 360;
+      colors.push(`hsla(${hue}, 70%, 60%, 0.6)`);
+    }
+
+    return colors;
+  };
+
+  useEffect(() => {
+    const fetchClusterData = async () => {
+      try {
+        setLoading(true);
+        const response = await axios.get('http://localhost:8000/api/papers/');
+        const papers = response.data.papers || [];
+        
+        // Count papers per cluster
+        const clusterCounts = {};
+        papers.forEach(paper => {
+          const cluster = paper.cluster !== undefined ? `Cluster ${paper.cluster}` : 'Uncategorized';
+          clusterCounts[cluster] = (clusterCounts[cluster] || 0) + 1;
+        });
+
+        const labels = Object.keys(clusterCounts);
+        const counts = Object.values(clusterCounts);
+        const backgroundColors = generateColors(labels.length);
+
+        setChartData({
+          labels,
+          datasets: [{
+            label: 'Papers per Cluster',
+            data: counts,
+            backgroundColor: backgroundColors,
+            borderColor: backgroundColors.map(color => color.replace('0.6', '1')),
+            borderWidth: 1,
+            borderRadius: 4,
+          }]
+        });
+        setError(null);
+      } catch (err) {
+        console.error('Error fetching cluster data:', err);
+        setError('Failed to load cluster data. Please try again later.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchClusterData();
+  }, []);
+
+  if (loading) {
     return (
-      <div className="w-full bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-        <div className="h-96 flex items-center justify-center">
-          <p className="text-gray-500 dark:text-gray-400">No cluster data available</p>
-        </div>
+      <div className="chart-container" style={{ padding: '20px', textAlign: 'center' }}>
+        <h2>Paper Clusters</h2>
+        <p>Loading cluster data...</p>
       </div>
     );
   }
 
-  // Bar chart data
-  const barChartData = {
-    labels: sortedClusters.map(([cluster]) => cluster),
-    datasets: [
-      {
-        label: 'Number of Papers',
-        data: sortedClusters.map(([_, count]) => count),
-        backgroundColor: [
-          'rgba(54, 162, 235, 0.6)',
-          'rgba(255, 99, 132, 0.6)',
-          'rgba(255, 206, 86, 0.6)',
-          'rgba(75, 192, 192, 0.6)',
-          'rgba(153, 102, 255, 0.6)',
-          'rgba(255, 159, 64, 0.6)'
-        ],
-        borderColor: [
-          'rgba(54, 162, 235, 1)',
-          'rgba(255, 99, 132, 1)',
-          'rgba(255, 206, 86, 1)',
-          'rgba(75, 192, 192, 1)',
-          'rgba(153, 102, 255, 1)',
-          'rgba(255, 159, 64, 1)'
-        ],
-        borderWidth: 1,
-      },
-    ]
-  };
-
-  const barChartOptions = {
-    responsive: true,
-    maintainAspectRatio: true,
-    aspectRatio: 1.5,
-    plugins: {
-      legend: {
-        display: false
-      },
-      tooltip: {
-        callbacks: {
-          label: function(context) {
-            const count = context.parsed.y;
-            const percentage = ((count / totalPapers) * 100).toFixed(1);
-            return `${count} papers (${percentage}%)`;
-          }
-        }
-      },
-      title: {
-        display: true,
-        text: 'Papers per Cluster',
-        font: {
-          size: 16,
-          weight: 'bold'
-        },
-        padding: { bottom: 15 }
-      }
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-        title: {
-          display: true,
-          text: 'Number of Papers',
-          padding: { top: 0, bottom: 10 }
-        },
-        ticks: {
-          precision: 0,
-          stepSize: 1,
-          padding: 5
-        },
-        grid: {
-          drawBorder: false
-        }
-      },
-      x: {
-        title: {
-          display: true,
-          text: 'Cluster ID',
-          padding: { top: 10, bottom: 0 }
-        },
-        ticks: {
-          autoSkip: false,
-          maxRotation: 0,
-          minRotation: 0,
-          padding: 10
-        },
-        grid: {
-          display: false,
-          drawBorder: false
-        }
-      }
-    },
-    animation: {
-      duration: 1000
-    }
-  };
-
-
+  if (error) {
+    return (
+      <div className="chart-container" style={{ padding: '20px', textAlign: 'center' }}>
+        <h2>Paper Clusters</h2>
+        <p style={{ color: 'red' }}>{error}</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="w-full bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-      <div className="h-96">
-        <Bar 
-          data={barChartData} 
-          options={barChartOptions}
-        />
-      </div>
+    <div className="chart-container" style={{ padding: '20px', height: '400px' }}>
+      <h2 style={{ marginBottom: '20px', textAlign: 'center' }}>Paper Clusters</h2>
+      {chartData.labels.length > 0 ? (
+        <div style={{ height: 'calc(100% - 60px)' }}>
+          <Bar
+            data={chartData}
+            options={{
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  display: false,
+                },
+                title: {
+                  display: true,
+                  text: 'Number of Papers per Cluster',
+                  font: {
+                    size: 16,
+                    weight: 'bold'
+                  },
+                  padding: { bottom: 10 }
+                },
+                tooltip: {
+                  callbacks: {
+                    label: function(context) {
+                      const label = context.dataset.label || '';
+                      const value = context.parsed.y;
+                      const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                      const percentage = Math.round((value / total) * 100);
+                      return [
+                        `${label}: ${value}`,
+                        `(${percentage}% of total)`
+                      ];
+                    }
+                  }
+                }
+              },
+              scales: {
+                y: {
+                  beginAtZero: true,
+                  ticks: {
+                    precision: 0,
+                    stepSize: 1
+                  },
+                  title: {
+                    display: true,
+                    text: 'Number of Papers',
+                    font: {
+                      weight: 'bold'
+                    }
+                  },
+                  grid: {
+                    color: 'rgba(0, 0, 0, 0.05)'
+                  }
+                },
+                x: {
+                  title: {
+                    display: true,
+                    text: 'Cluster Groups',
+                    font: {
+                      weight: 'bold'
+                    }
+                  },
+                  grid: {
+                    display: false
+                  }
+                }
+              },
+              animation: {
+                duration: 1000,
+                easing: 'easeInOutQuart'
+              }
+            }}
+          />
+        </div>
+      ) : (
+        <div style={{ textAlign: 'center', padding: '20px' }}>
+          <p>No cluster data available. Try performing a search first.</p>
+        </div>
+      )}
     </div>
   );
 };

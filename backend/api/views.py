@@ -136,14 +136,19 @@ class SearchTermsAPIView(APIView):
     def post(self, request):
         """
         Handle POST requests to update search terms in config.json and trigger arxiv_extractor_abstract_summary.py
-        Expected request data: {"search_terms": ["term1", "term2", ...]}
+        Expected request data: {
+            "search_terms": ["term1", "term2", ...],
+            "keywords": ["keyword1", "keyword2", ...]  # optional
+        }
         """
                 
-        # Default action is to update search terms
+        # Get search terms (required) and keywords (optional)
         search_terms = request.data.get('search_terms', [])
-        if not search_terms:
+        keywords = request.data.get('keywords', [])
+        
+        if not search_terms and not keywords:
             return Response(
-                {'error': 'No search terms provided'}, 
+                {'error': 'No search terms or keywords provided'}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -155,8 +160,13 @@ class SearchTermsAPIView(APIView):
             with open(config_path, 'r') as f:
                 config = json.load(f)
             
-            # Update must_include terms
-            config['must_include'] = search_terms
+            # Update must_include terms if provided
+            if search_terms:
+                config['must_include'] = search_terms
+                
+            # Update optional keywords if provided
+            if keywords:
+                config['optional_keywords'] = keywords if isinstance(keywords, list) else [keywords]
             
             # Save updated config
             with open(config_path, 'w') as f:
@@ -295,161 +305,162 @@ class PapersAPIView(APIView):
     
     def get_papers_data(self):
         """Helper method to get papers data from CSV files"""
-        # Try multiple possible output directories
+        # Define all possible output directories to check
         possible_dirs = [
-            Path(settings.BASE_DIR).parent / 'backend' / 'scripts' / 'out',  # New location
-            Path(settings.BASE_DIR).parent / 'backend' / 'out',               # Old location
-            Path(settings.BASE_DIR).parent / 'out'                            # Alternative location
+            Path(settings.BASE_DIR).parent / 'backend' / 'scripts' / 'out',  # Current location
+            Path(settings.BASE_DIR).parent / 'backend' / 'out',              # Old location
+            Path(settings.BASE_DIR).parent / 'out',                          # Alternative location
+            Path(settings.BASE_DIR) / 'out',                                 # Django project root out
+            Path(settings.BASE_DIR).parent / 'backend' / 'scripts' / 'output' # Another possible location
         ]
         
         papers = []
         output_dir = None
         
-        # Find the first directory that exists and contains CSV files
-        for dir_path in possible_dirs:
-            if dir_path.exists() and any(dir_path.glob('*.csv')):
-                output_dir = dir_path
-                print(f"Found output directory: {output_dir}")
-                break
+        # Debug: Print all directories being checked
+        print("Checking for CSV files in the following directories:")
+        for i, dir_path in enumerate(possible_dirs, 1):
+            exists = dir_path.exists()
+            has_csv = any(dir_path.glob('*.csv')) if exists else False
+            print(f"{i}. {dir_path} - Exists: {exists}, Has CSV: {has_csv}")
+            
+            if exists and not output_dir:  # Only set output_dir once
+                if has_csv:
+                    output_dir = dir_path
+                    print(f"Found CSV files in: {output_dir}")
         
         if not output_dir:
-            return [], 'No output directory found with CSV files'
-        
-        print(f"Looking for CSV files in: {output_dir}")
-        
-        # Look for the most recent summary CSV file
-        try:
-            summary_files = sorted(
-                output_dir.glob('*summary*.csv'),
-                key=os.path.getmtime,
-                reverse=True
-            )
-            print(f"Found {len(summary_files)} summary files")
-        except Exception as e:
-            print(f"Error finding summary files: {str(e)}")
-            summary_files = []
-        
-        # If no summary files, try to use clustering file directly
-        if not summary_files:
-            print("No summary files found, looking for clustering files")
-            # Look for clustering files with more flexible patterns
-            clustering_patterns = ['*kmeans*.csv', '*arxiv*.csv', '*.csv']
-            clustering_files = []
-            
-            for pattern in clustering_patterns:
-                try:
-                    files = sorted(
-                        output_dir.glob(pattern),
-                        key=os.path.getmtime,
-                        reverse=True
-                    )
-                    if files:
-                        clustering_files = files
-                        print(f"Found {len(files)} files with pattern {pattern}")
-                        break
-                except Exception as e:
-                    print(f"Error with pattern {pattern}: {str(e)}")
-            
-            if not clustering_files:
-                error_msg = f'No paper data found in {output_dir}. Tried patterns: {clustering_patterns}'
+            # If no directory with CSVs found, try to create the default directory
+            default_dir = Path(settings.BASE_DIR).parent / 'backend' / 'scripts' / 'out'
+            try:
+                default_dir.mkdir(parents=True, exist_ok=True)
+                output_dir = default_dir
+                print(f"Created and using default directory: {output_dir}")
+            except Exception as e:
+                error_msg = f'No valid output directory found with CSV files and could not create default directory: {str(e)}'
                 print(error_msg)
                 return [], error_msg
+        
+        print(f"Using output directory: {output_dir}")
+        
+        # Look for the most recent summary or clustering CSV file
+        try:
+            # First try to find summary files
+            summary_files = list(output_dir.glob('*summary*.csv'))
+            print(f"Found {len(summary_files)} summary files")
+            
+            # If no summary files, look for clustering files
+            if not summary_files:
+                print("No summary files found, looking for clustering files")
+                summary_files = list(output_dir.glob('*kmeans*.csv'))
+                print(f"Found {len(summary_files)} clustering files")
                 
-            # Use the most recent clustering file
+                # If still no files, look for any CSV files
+                if not summary_files:
+                    print("No clustering files found, looking for any CSV files")
+                    summary_files = list(output_dir.glob('*.csv'))
+                    print(f"Found {len(summary_files)} CSV files")
+                    
+                    if not summary_files:
+                        # List all files in the directory for debugging
+                        all_files = list(output_dir.glob('*'))
+                        print(f"All files in {output_dir}:")
+                        for f in all_files:
+                            print(f"- {f.name} (size: {f.stat().st_size} bytes, modified: {f.stat().st_mtime})")
+                        
+                        error_msg = f'No CSV files found in {output_dir}.'
+                        print(error_msg)
+                        return [], error_msg
+            
+            # Sort files by modification time (newest first)
+            summary_files = sorted(summary_files, key=os.path.getmtime, reverse=True)
+            print(f"Using file: {summary_files[0]}")
+            
             try:
                 import pandas as pd
-                df = pd.read_csv(clustering_files[0])
+                print(f"Reading CSV file: {summary_files[0]}")
+                df = pd.read_csv(summary_files[0])
+                
+                if df.empty:
+                    error_msg = f'CSV file {summary_files[0]} is empty.'
+                    print(error_msg)
+                    return [], error_msg
                 
                 # Convert DataFrame to list of dicts with appropriate field mapping
                 papers = []
-                for _, row in df.iterrows():
-                    # Get all column names for debugging
-                    all_columns = df.columns.tolist()
-                    print(f"Available columns in CSV: {all_columns}")
-                    
-                    # Try to extract abstract from various possible column names
-                    abstract = ''
-                    possible_abstract_columns = ['Abstract', 'abstract', 'Summary', 'summary', 'paper_abstract']
-                    
-                    for col in possible_abstract_columns:
-                        if col in row and pd.notna(row[col]) and str(row[col]).strip():
-                            abstract = str(row[col]).strip()
-                            print(f"Found abstract in column: {col}")
-                            break
-                    
-                    paper = {
-                        'id': str(row.get('id', row.get('ID', ''))),
-                        'title': row.get('Title', row.get('title', 'Untitled')).strip(),
-                        'authors': row.get('Authors', row.get('authors', 'Unknown Author')).strip(),
-                        'abstract': abstract,
-                        'published': row.get('Published', row.get('published', row.get('Date', ''))),
-                        'cluster': int(row.get('Cluster', row.get('cluster', -1))),
-                        'cluster_label': f"Cluster {row.get('Cluster', row.get('cluster', '?'))}",
-                        'url': f"https://arxiv.org/abs/{row.get('id', row.get('ID', ''))}" if 'id' in row or 'ID' in row else '#',
-                        'categories': row.get('Categories', row.get('categories', '')).strip(),
-                        '_original': {col: row[col] for col in df.columns if pd.notna(row[col]) and str(row[col]).strip()}
-                    }
-                    
-                    # Log paper details for debugging
-                    print(f"Processed paper: {paper['title']}")
-                    print(f"Abstract length: {len(abstract)} characters")
-                    
-                    papers.append(paper)
+                print(f"Processing {len(df)} papers from {summary_files[0].name}")
                 
-                print(f"Total papers processed: {len(papers)}")
-                print(f"First paper abstract: {papers[0]['abstract'][:100]}..." if papers[0]['abstract'] else "No abstract in first paper")
+                # Get all column names for debugging
+                all_columns = df.columns.tolist()
+                print(f"Available columns in CSV: {all_columns}")
+                
+                for idx, row in df.iterrows():
+                    try:
+                        # Extract data with fallbacks for different column naming conventions
+                        paper_id = str(row.get('id', row.get('ID', row.get('paper_id', str(idx)))))
+                        title = row.get('Title', row.get('title', 'Untitled'))
+                        if pd.isna(title):
+                            title = 'Untitled'
+                        
+                        # Try to extract abstract from various possible column names
+                        abstract = ''
+                        possible_abstract_columns = ['Abstract', 'abstract', 'Summary', 'summary', 'paper_abstract', 'Abstract_processed']
+                        
+                        for col in possible_abstract_columns:
+                            if col in row and pd.notna(row[col]) and str(row[col]).strip():
+                                abstract = str(row[col]).strip()
+                                if len(abstract) > 0:
+                                    break
+                        
+                        paper = {
+                            'id': paper_id,
+                            'title': title,
+                            'authors': row.get('Authors', row.get('authors', 'Unknown Author')),
+                            'abstract': abstract,
+                            'published': row.get('Published', row.get('published', row.get('Date', ''))),
+                            'cluster': int(row.get('Cluster', row.get('cluster', -1))),
+                            'cluster_label': f"Cluster {row.get('Cluster', row.get('cluster', '?'))}",
+                            'url': f"https://arxiv.org/abs/{paper_id}" if 'id' in row or 'ID' in row else '#',
+                            'categories': row.get('Categories', row.get('categories', '')),
+                            '_original': {col: str(row[col]) for col in df.columns if pd.notna(row[col]) and str(row[col]).strip()}
+                        }
+                        
+                        # Clean string fields
+                        for key in ['title', 'authors', 'abstract', 'published', 'categories']:
+                            if key in paper and paper[key] is not None:
+                                paper[key] = str(paper[key]).strip()
+                        
+                        papers.append(paper)
+                        
+                    except Exception as e:
+                        print(f"Error processing row {idx}: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
+                        continue
+                
+                print(f"Successfully processed {len(papers)} papers")
+                if papers:
+                    print(f"First paper: {papers[0]['title']}")
+                    print(f"Abstract preview: {papers[0]['abstract'][:100]}..." if papers[0]['abstract'] else "No abstract available")
                 
                 return papers, None
                 
             except Exception as e:
-                return [], f'Error reading clustering data: {str(e)}'
-        
-        # Read the most recent summary file if available
-        try:
-            import pandas as pd
-            df = pd.read_csv(summary_files[0])
-            
-            # Get all column names for debugging
-            print(f"Columns in summary file: {df.columns.tolist()}")
-            
-            # Convert DataFrame to list of dicts with explicit field mapping
-            papers = []
-            for _, row in df.iterrows():
-                # Try to extract abstract from various possible column names
-                abstract = ''
-                possible_abstract_columns = ['Abstract', 'abstract', 'Summary', 'summary', 'Abstract Summaries', 'abstract_summaries']
-                
-                for col in possible_abstract_columns:
-                    if col in row and pd.notna(row[col]) and str(row[col]).strip():
-                        abstract = str(row[col]).strip()
-                        print(f"Found abstract in column: {col}")
-                        break
-                
-                # Create paper object with all fields
-                paper = {
-                    'id': str(row.get('id', row.get('ID', ''))),
-                    'title': row.get('Title', row.get('title', 'Untitled')).strip(),
-                    'authors': row.get('Authors', row.get('authors', 'Unknown Author')).strip(),
-                    'abstract': abstract,
-                    'published': row.get('Published', row.get('published', row.get('Date', row.get('submitted_date', '')))),
-                    'url': row.get('URL', row.get('url', row.get('link', '#'))),
-                    'categories': row.get('Categories', row.get('categories', '')).strip(),
-                    'summary': abstract,  # For backward compatibility
-                    'submitted_date': row.get('submitted_date', row.get('Submitted Date', '')),
-                    '_original': {col: row[col] for col in df.columns if pd.notna(row[col]) and str(row[col]).strip()}
-                }
-                
-                # Log paper details for debugging
-                print(f"Processed summary paper: {paper['title']}")
-                print(f"Abstract length: {len(abstract)} characters")
-                
-                papers.append(paper)
-            
-            print(f"Total summary papers processed: {len(papers)}")
-            print(f"First summary paper abstract: {papers[0]['abstract'][:100]}..." if papers and papers[0].get('abstract') else "No abstract in first summary paper")
+                error_msg = f'Error reading or processing CSV file {summary_files[0]}: {str(e)}'
+                print(error_msg)
+                import traceback
+                traceback.print_exc()
+                return [], error_msg
                 
         except Exception as e:
-            return [], f'Error reading paper data: {str(e)}'
+            error_msg = f'Error in get_papers_data: {str(e)}'
+            print(error_msg)
+            import traceback
+            traceback.print_exc()
+            return [], error_msg
+            
+        # If we get here, we couldn't find or process any files
+        return [], 'No valid paper data found in any CSV files'
                 
         return papers, None
     
@@ -474,10 +485,17 @@ class PapersAPIView(APIView):
 
     def get(self, request):
         """
-        Get all papers and clustering results
+        Get paginated papers and clustering results
+        Query Parameters:
+            page: Page number (default: 1)
+            page_size: Number of items per page (default: 20, max: 100)
         """
         try:
-            # Get papers data
+            # Get pagination parameters
+            page = int(request.query_params.get('page', 1))
+            page_size = min(int(request.query_params.get('page_size', 20)), 100)  # Cap at 100 items per page
+            
+            # Get all papers data
             papers, error = self.get_papers_data()
             if error and not papers:
                 return Response(
@@ -485,28 +503,11 @@ class PapersAPIView(APIView):
                     status=status.HTTP_404_NOT_FOUND
                 )
             
-            # Get clustering results
+            # Get clustering results (for all papers)
             clustering_results, clustering_error = self.get_clustering_results()
             
-            # Prepare response data
-            response_data = {
-                'papers': papers,
-                'clustering': {
-                    'available': clustering_results is not None,
-                    'error': clustering_error,
-                    'stats': {}
-                }
-            }
-            
-            # If we have clustering results, include them in the response
+            # Apply clustering data to all papers if available
             if clustering_results and not clustering_error:
-                response_data['clustering'].update({
-                    'stats': clustering_results.get('stats', {}),
-                    'source_file': clustering_results.get('source_file'),
-                    'last_modified': clustering_results.get('last_modified'),
-                    'num_clusters': clustering_results.get('stats', {}).get('num_clusters', 0)
-                })
-                
                 # Create a mapping of paper titles to clustering data for merging
                 clustering_map = {
                     item['title'].lower().strip(): item 
@@ -528,12 +529,53 @@ class PapersAPIView(APIView):
                             }
                         })
             
+            # Calculate pagination
+            total_papers = len(papers)
+            total_pages = (total_papers + page_size - 1) // page_size
+            start_idx = (page - 1) * page_size
+            end_idx = start_idx + page_size
+            
+            # Get paginated papers
+            paginated_papers = papers[start_idx:end_idx]
+            
+            # Prepare response data
+            response_data = {
+                'pagination': {
+                    'current_page': page,
+                    'page_size': page_size,
+                    'total_pages': total_pages,
+                    'total_items': total_papers,
+                    'has_next': page < total_pages,
+                    'has_previous': page > 1
+                },
+                'papers': paginated_papers,
+                'clustering': {
+                    'available': clustering_results is not None,
+                    'error': clustering_error,
+                    'stats': {}
+                }
+            }
+            
+            # Add clustering stats if available
+            if clustering_results and not clustering_error:
+                response_data['clustering'].update({
+                    'stats': clustering_results.get('stats', {}),
+                    'source_file': clustering_results.get('source_file'),
+                    'last_modified': clustering_results.get('last_modified'),
+                    'num_clusters': clustering_results.get('stats', {}).get('num_clusters', 0)
+                })
+            
             # Clean the data to handle NaN/Inf values
             cleaned_data = self.clean_data(response_data)
             
-            # Return the combined data
+            # Return the paginated response
             return Response(cleaned_data)
             
+        except ValueError as e:
+            return Response(
+                {'error': 'Invalid pagination parameters'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
         except Exception as e:
             import traceback
             traceback.print_exc()  # Print full traceback to console

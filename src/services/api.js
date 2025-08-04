@@ -115,21 +115,26 @@ const processPapersData = (papersData) => {
 };
 
 /**
- * Fetches papers data including clustering information from the backend
- * @returns {Promise<Object>} Object containing papers and clustering data
+ * Fetches paginated papers data including clustering information from the backend
+ * @param {Object} options - Pagination options
+ * @param {number} [options.page=1] - Page number to fetch (1-based)
+ * @param {number} [options.pageSize=20] - Number of items per page (max 100)
+ * @returns {Promise<Object>} Object containing paginated papers, clustering data, and pagination info
  */
-export const fetchPapers = async () => {
+export const fetchPapers = async ({ page = 1, pageSize = 20 } = {}) => {
   try {
-    console.log('Starting to fetch papers and clustering data...');
-    const url = `${API_BASE_URL}/papers/`;  // Ensure trailing slash for Django
-    console.log('API URL:', url);
+    // Ensure page is at least 1 and pageSize is between 1 and 100
+    const validPage = Math.max(1, parseInt(page, 10) || 1);
+    const validPageSize = Math.min(100, Math.max(1, parseInt(pageSize, 10) || 20));
     
-    // Log environment variables for debugging
-    console.log('Environment:', {
-      NODE_ENV: process.env.NODE_ENV,
-      REACT_APP_API_URL: process.env.REACT_APP_API_URL,
-      PUBLIC_URL: process.env.PUBLIC_URL
+    const params = new URLSearchParams({
+      page: validPage,
+      page_size: validPageSize
     });
+    
+    const url = `${API_BASE_URL}/papers/?${params.toString()}`;
+    console.log('Fetching papers with pagination:', { page: validPage, pageSize: validPageSize });
+    console.log('API URL:', url);
     
     // Configure request
     const requestHeaders = {
@@ -161,13 +166,6 @@ export const fetchPapers = async () => {
     console.log(`Request completed in ${requestDuration}ms`);
     console.log('Response status:', response.status, response.statusText);
     
-    // Log response headers for debugging
-    const responseHeaders = {};
-    response.headers.forEach((value, key) => {
-      responseHeaders[key] = value;
-    });
-    console.log('Response headers:', responseHeaders);
-    
     // Clone the response for error handling
     const responseClone = response.clone();
     
@@ -197,7 +195,7 @@ export const fetchPapers = async () => {
         url,
         status: response.status,
         statusText: response.statusText,
-        headers: responseHeaders,
+        details: errorDetails,
         details: errorDetails,
         error: error.message
       });
@@ -225,28 +223,22 @@ export const fetchPapers = async () => {
       throw new Error(`Invalid JSON response from server: ${e.message}`);
     }
     
-    // Validate response structure
-    if (!responseData) {
-      throw new Error('Empty response from server');
-    }
+    // Process the papers data
+    const processedPapers = processPapersData(responseData.papers || []);
     
-    // Extract papers from the response
-    let papers = [];
-    if (responseData.papers && Array.isArray(responseData.papers)) {
-      papers = responseData.papers;
-      console.log(`Found ${papers.length} papers in response.papers`);
-    } else if (Array.isArray(responseData)) {
-      // Fallback for legacy format
-      papers = responseData;
-      console.log(`Found ${papers.length} papers in root array (legacy format)`);
-    } else {
-      console.error('Unexpected response format:', responseData);
-      throw new Error('Invalid response format: expected papers array not found');
-    }
-    
-    if (papers.length === 0) {
+    if (processedPapers.length === 0) {
       console.warn('No papers found in the response');
     }
+    
+    // Extract pagination information
+    const paginationInfo = responseData.pagination || {
+      current_page: validPage,
+      page_size: validPageSize,
+      total_pages: 1,
+      total_items: processedPapers.length,
+      has_next: false,
+      has_previous: false
+    };
     
     // Extract clustering information if available
     const clusteringInfo = {
@@ -258,48 +250,20 @@ export const fetchPapers = async () => {
       numClusters: responseData.clustering?.num_clusters || 0
     };
     
-    console.log('Clustering information:', clusteringInfo);
-
-    // Include clustering data in the response
-    const responseWithClustering = {
-      papers: papers,
-      clustering: {
-        available: clusteringInfo.available,
-        data: responseData.clustering?.data || [],
-        stats: clusteringInfo.stats,
-        sourceFile: clusteringInfo.sourceFile,
-        lastModified: clusteringInfo.lastModified,
-        numClusters: clusteringInfo.numClusters
-      }
-    };
-
-    // Log the first few papers for debugging
-    console.log('Raw papers data from API (first 3):', papers.slice(0, 3));
+    console.log('Successfully processed paginated papers and clustering data');
     
-    // Process papers using the shared processing function
-    const formattedPapers = processPapersData(papers);
-    
-    // Log a sample of the transformed data for debugging
-    formattedPapers.slice(0, 3).forEach((paper, index) => {
-      console.log(`Sample paper ${index + 1}:`, {
-        id: paper.id,
-        title: paper.title,
-        authors: paper.authors,
-        published: paper.published,
-        hasAbstract: !!(paper.abstract && paper.abstract !== 'No abstract available'),
-        url: paper.url
-      });
-    });
-    
-    console.log('Successfully formatted papers with clustering data:', {
-      papers: formattedPapers,
-      clustering: responseWithClustering.clustering
-    });
-    
-    // Return both papers and clustering data
+    // Return the paginated response with papers, pagination, and clustering info
     return {
-      papers: formattedPapers,
-      clustering: responseWithClustering.clustering
+      papers: processedPapers,
+      pagination: {
+        currentPage: paginationInfo.current_page,
+        pageSize: paginationInfo.page_size,
+        totalPages: paginationInfo.total_pages,
+        totalItems: paginationInfo.total_items,
+        hasNext: paginationInfo.has_next,
+        hasPrevious: paginationInfo.has_previous
+      },
+      clustering: clusteringInfo
     };
   } catch (error) {
     console.error('Error in fetchPapers:', {
@@ -397,15 +361,38 @@ const pollForResults = async (taskId, initialInterval = 2000, maxAttempts = 60, 
 
 /**
  * Updates search terms and triggers paper processing
- * @param {string} searchTerm - Comma-separated list of search terms
+ * @param {Object|string} searchParams - Search parameters object or search term string
+ * @param {string} searchParams.query - Main search query (required)
+ * @param {string} [searchParams.keywords] - Optional keywords to refine search (comma-separated)
  * @returns {Promise<Object>} Response from the server with processing status
  */
-export const updateSearchTerms = async (searchTerm) => {
+export const updateSearchTerms = async (searchParams) => {
   try {
-    console.log('Updating search terms with:', searchTerm);
+    console.log('Updating search terms with params:', searchParams);
     
-    // Convert the search term to an array as expected by the backend
-    const searchTerms = searchTerm.split(',').map(term => term.trim()).filter(term => term);
+    // Handle both string (backward compatibility) and object parameters
+    let query = '';
+    let keywords = [];
+    
+    if (typeof searchParams === 'string') {
+      query = searchParams;
+    } else if (searchParams && typeof searchParams === 'object') {
+      query = searchParams.query || '';
+      // Safely handle keywords - check if it exists and is a string before splitting
+      if (searchParams.keywords) {
+        if (typeof searchParams.keywords === 'string') {
+          keywords = searchParams.keywords.split(',').map(k => k.trim()).filter(k => k);
+        } else if (Array.isArray(searchParams.keywords)) {
+          // If it's already an array, just use it directly
+          keywords = searchParams.keywords.map(k => String(k).trim()).filter(k => k);
+        }
+      }
+    } else {
+      throw new Error('Invalid search parameters');
+    }
+    
+    // Convert the search query to an array as expected by the backend
+    const searchTerms = query.split(',').map(term => term.trim()).filter(term => term);
     
     if (searchTerms.length === 0) {
       throw new Error('Please provide at least one valid search term');
@@ -430,7 +417,10 @@ export const updateSearchTerms = async (searchTerm) => {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ search_terms: searchTerms }),  // Match backend's expected field name
+      body: JSON.stringify({ 
+        search_terms: searchTerms,
+        ...(keywords.length > 0 && { keywords: keywords })  // Only include keywords if provided
+      }),
     });
     
     if (!searchResponse.ok) {

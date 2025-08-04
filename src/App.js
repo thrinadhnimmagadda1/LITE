@@ -6,6 +6,7 @@ import ClustersChart from './components/ClustersChart';
 import ListSection from './components/ListSection';
 import SearchPage from './components/SearchPage';
 import Header from './components/Header';
+import Pagination from './components/Pagination';
 import './App.css';
 
 function App() {
@@ -23,6 +24,16 @@ function App() {
   const [chartData, setChartData] = useState({
     labels: [],
     datasets: []
+  });
+  
+  // Pagination state
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    pageSize: 20,
+    totalPages: 1,
+    totalItems: 0,
+    hasNext: false,
+    hasPrevious: false
   });
 
   // Handler for when a month is selected in the publications chart
@@ -207,23 +218,37 @@ function App() {
     }
   }, []);
 
-  // Function to load papers data
-  const loadPapers = useCallback(async () => {
+  // Function to load papers data with pagination
+  const loadPapers = useCallback(async (page = 1, pageSize = 20) => {
     try {
-      console.log('Starting to load papers...');
+      console.log(`Starting to load papers (page ${page}, ${pageSize} items per page)...`);
       setIsLoading(true);
       
-      // Clear previous data
-      setItems([]);
-      setFilteredItems([]);
+      // Clear previous data if it's the first page
+      if (page === 1) {
+        setItems([]);
+        setFilteredItems([]);
+      }
       
-      // Fetch papers and clustering data from the API
-      console.log('Fetching papers and clustering data from API...');
-      const response = await fetchPapers();
+      // Fetch paginated papers and clustering data from the API
+      console.log(`Fetching page ${page} with ${pageSize} items...`);
+      const response = await fetchPapers({ page, pageSize });
       
       // Check if we have a valid response with papers
       if (!response || !response.papers || !Array.isArray(response.papers)) {
         throw new Error('Invalid data format received from API');
+      }
+      
+      // Update pagination state
+      if (response.pagination) {
+        setPagination({
+          currentPage: response.pagination.currentPage,
+          pageSize: response.pagination.pageSize,
+          totalPages: response.pagination.totalPages,
+          totalItems: response.pagination.totalItems,
+          hasNext: response.pagination.hasNext,
+          hasPrevious: response.pagination.hasPrevious
+        });
       }
       
       // Log clustering information if available
@@ -231,15 +256,14 @@ function App() {
         console.log('Clustering information:', {
           available: response.clustering.available,
           sourceFile: response.clustering.sourceFile,
-          numClusters: response.clustering.numClusters,
-          dataPoints: response.clustering.data?.length || 0
+          numClusters: response.clustering.numClusters
         });
       }
       
-      console.log(`Received ${response.papers.length} papers from API`);
+      console.log(`Received ${response.papers.length} papers from API (page ${page} of ${response.pagination?.totalPages || 1})`);
       
-      // Use clustering data if available, otherwise fall back to papers
-      const dataToProcess = response.clustering?.data?.length > 0 ? response.clustering.data : response.papers;
+      // Process the papers data
+      const dataToProcess = response.papers;
       
       // Transform data to match the expected format for the UI
       const formattedItems = dataToProcess.map(paper => {
@@ -339,12 +363,22 @@ function App() {
       // Filter out any null/undefined papers that might have been created during errors
       const validItems = formattedItems.filter(item => item != null);
       
-      // Update state with the new data
-      setItems(validItems);
-      setFilteredItems(validItems);
-      updateChartData(validItems);
+      // Update state with the new data (append if loading more pages)
+      if (page > 1) {
+        setItems(prevItems => [...prevItems, ...validItems]);
+      } else {
+        setItems(validItems);
+      }
       
-      console.log('Papers loaded successfully');
+      // Always update filtered items with the current page's data
+      setFilteredItems(validItems);
+      
+      // Update chart data with all available items (only on first page load)
+      if (page === 1) {
+        updateChartData(validItems);
+      }
+      
+      console.log(`Page ${page} loaded successfully with ${validItems.length} items`);
     } catch (error) {
       console.error('Error loading data:', {
         error: error.message,
@@ -373,159 +407,88 @@ function App() {
     }
   }, [updateChartData]);
 
-  // Load data on component mount
+  // Load initial data on component mount
   useEffect(() => {
-    loadPapers();
-  }, [loadPapers]);
+    loadPapers(1, 20);
+  }, []); // Removed loadPapers from deps to prevent infinite loops
+  
+  // Handle pagination controls
+  const handlePageChange = (newPage) => {
+    if (newPage < 1 || newPage > pagination.totalPages) return;
+    loadPapers(newPage, pagination.pageSize);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  
+  // Handle page size change
+  const handlePageSizeChange = (event) => {
+    const newSize = parseInt(event.target.value, 10);
+    loadPapers(1, newSize);
+  };
 
   // Handle search submission
-  const handleSearch = useCallback(async (searchValue) => {
-    console.log('Search initiated with value:', searchValue);
+  const handleSearch = useCallback(async (searchParams) => {
+    console.log('Search initiated with params:', searchParams);
     
-    // If searchValue is an event object (from direct form submission), prevent default
-    if (searchValue && typeof searchValue.preventDefault === 'function') {
-      searchValue.preventDefault();
-      // Get the search query from the input element
-      const inputElement = searchValue.target.querySelector('input[type="text"]');
-      searchValue = inputElement ? inputElement.value : searchValue;
-    }
+    // Handle both direct string (backward compatibility) and object with query/keywords
+    let query = '';
+    let keywords = '';
     
-    if (!searchValue.trim()) return;
-    
-    setHasSearched(true);
-    setIsLoading(true);
-    setSearchTerm(searchValue);
-    
-    try {
-      // Call the backend API to update search terms
-      await updateSearchTerms(searchValue);
-      
-      // Fetch the updated papers
-      const papers = await fetchPapers();
-      setItems(papers);
-      setFilteredItems(papers);
-      
-      // Update chart data
-      const labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const currentYear = new Date().getFullYear();
-      const counts = Array(12).fill(0);
-      
-      papers.forEach(paper => {
-        if (paper.published_date) {
-          const date = new Date(paper.published_date);
-          if (date.getFullYear() === currentYear) {
-            counts[date.getMonth()]++;
-          }
-        }
-      });
-      
-      setChartData({
-        labels,
-        datasets: [
-          {
-            label: 'Publications',
-            data: counts,
-            backgroundColor: 'rgba(99, 102, 241, 0.6)',
-            borderColor: 'rgba(99, 102, 241, 1)',
-            borderWidth: 1,
-          },
-        ],
-      });
-    } catch (error) {
-      console.error('Error during search:', error);
-    } finally {
-      setIsLoading(false);
-    }
-    
-    // Get the search query from the input
-    const query = typeof searchValue === 'string' ? searchValue : searchValue?.target?.value || '';
-    console.log('Processed search query:', query);
-    
-    if (!query.trim()) {
-      // If search is empty, show all items
-      console.log('Empty search query, showing all items');
-      setFilteredItems([...items]);
-      setSearchTerm('');
+    if (typeof searchParams === 'string') {
+      query = searchParams.trim();
+      if (!query) return;
+      searchParams = { query };
+    } else if (searchParams && typeof searchParams === 'object') {
+      query = searchParams.query?.trim() || '';
+      keywords = searchParams.keywords?.trim() || '';
+      if (!query) return;
+    } else {
+      console.error('Invalid search parameters:', searchParams);
       return;
     }
     
-    setIsSearching(true);
+    // Update search term state
     setSearchTerm(query);
+    setHasSearched(true);
+    setIsLoading(true);
     
     try {
-      // Show loading state
-      setItems([]);
-      setFilteredItems([]);
+      // Call the backend API with search parameters
+      const searchPayload = {
+        query: query,
+        ...(keywords && { keywords: keywords.split(',').map(k => k.trim()).filter(Boolean) })
+      };
       
-      console.log('Updating search terms in backend...');
+      console.log('Sending search payload:', searchPayload);
       
-      try {
-        // First update the search terms in the backend
-        const response = await updateSearchTerms(query);
-        console.log('Backend update response:', response);
-        
-        // Handle different response formats
-        if (response.warning) {
-          console.warn('Warning from backend:', response.warning);
-          alert(response.warning);
-          return;
-        }
-        
-        // Poll for new results with retries
-        const maxRetries = 5;
-        let retryCount = 0;
-        let papers = [];
-        
-        while (retryCount < maxRetries) {
-          try {
-            console.log(`Fetching papers (attempt ${retryCount + 1}/${maxRetries})...`);
-            const data = await fetchPapers();
-            console.log('Fetched papers data:', data);
-            
-            // Handle different response formats
-            papers = Array.isArray(data) ? data : (data.papers || []);
-            
-            if (papers.length > 0) {
-              console.log(`Found ${papers.length} papers`);
-              break; // Exit the retry loop if we got papers
-            }
-            
-            // Wait before retrying
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            retryCount++;
-          } catch (fetchError) {
-            console.error(`Error fetching papers (attempt ${retryCount + 1}):`, fetchError);
-            if (retryCount >= maxRetries - 1) throw fetchError;
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            retryCount++;
-          }
-        }
-        
-        if (papers.length === 0) {
-          throw new Error('No papers found matching your search criteria');
-        }
-        
-        // Update state with the new papers
-        setItems(papers);
-        setFilteredItems(papers);
-        updateChartData(papers);
-        
-      } catch (error) {
-        console.error('Search error:', error);
-        alert(`Search error: ${error.message}`);
+      // Poll for new results with retries
+      const maxRetries = 5;
+      let retryCount = 0;
+      
+      // First update the search terms in the backend
+      const response = await updateSearchTerms(searchPayload);
+      console.log('Backend update response:', response);
+      
+      // Handle different response formats
+      if (response.warning) {
+        console.warn('Warning from backend:', response.warning);
+        alert(response.warning);
+        return;
       }
       
-    } catch (error) {
-      console.error('Search processing error:', error);
-      alert(`Error processing search: ${error.message}`);
-    } finally {
-      setIsSearching(false);
+      // Reset to first page when performing a new search
+      await loadPapers(1, pagination.pageSize);
       
-      // Force a re-render by updating a dummy state
-      setItems(prevItems => [...prevItems]);
+    } catch (error) {
+      console.error('Error during search:', {
+        error: error.message,
+        stack: error.stack,
+        name: error.name
+      });
+    } finally {
+      setIsLoading(false);
     }
-  }, [items, searchTerm]);
-  
+  }, [pagination.pageSize, loadPapers]);
+
   // Handle cluster filter
   const filterByCluster = useCallback((clusterName) => {
     console.log('Filtering by cluster:', clusterName);
@@ -687,8 +650,9 @@ function App() {
         
         <main className="container mx-auto px-4 py-6">
           <div className="space-y-8">
-            {activeTab === 'papers' && (
+            {activeTab === 'papers' ? (
               <>
+                {/* Charts Section */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                     <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
@@ -709,51 +673,87 @@ function App() {
                     </h2>
                     <div className="h-80">
                       <ClustersChart 
-                        papers={items} 
+                        papers={items}
                         onPaperSelect={handlePaperSelect}
+                        onCategorySelect={handleCategorySelect}
+                        selectedCategory={selectedCategory}
                       />
                     </div>
                   </div>
                 </div>
-                
+
+                {/* Papers List */}
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-                  <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                      Research Papers
-                    </h2>
-                  </div>
-                  {filteredItems && Array.isArray(filteredItems) && filteredItems.length > 0 ? (
-                    <ListSection 
-                      items={filteredItems} 
-                      onCategorySelect={handleCategorySelect}
-                      onItemClick={handlePaperSelect}
-                      key={`list-section-${filteredItems.length}-${Date.now()}`}
-                    />
-                  ) : (
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                      <p className="text-gray-500 dark:text-gray-400 text-center py-8">
-                        No papers found. Try a different search term.
+                  <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                    <div>
+                      <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                        {searchTerm ? `Search Results for "${searchTerm}"` : 'Latest Publications'}
+                      </h2>
+                      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                        Showing {items.length} of {pagination.totalItems} {pagination.totalItems === 1 ? 'result' : 'results'}
                       </p>
+                    </div>
+                    
+                    {!isLoading && items.length > 0 && (
+                      <div className="text-sm text-gray-500 dark:text-gray-400">
+                        Page {pagination.currentPage} of {pagination.totalPages}
+                      </div>
+                    )}
+                  </div>
+                  
+                  {isLoading && pagination.currentPage === 1 ? (
+                    <div className="p-6 text-center">
+                      <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-500 border-t-transparent"></div>
+                      <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">Loading papers...</p>
+                    </div>
+                  ) : items.length > 0 ? (
+                    <>
+                      <ListSection 
+                        items={items}
+                        onItemClick={handlePaperSelect}
+                        selectedItemId={selectedPaper?.id}
+                        onCategorySelect={handleCategorySelect}
+                      />
+                      
+                      {/* Pagination Controls */}
+                      <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+                        <Pagination
+                          currentPage={pagination.currentPage}
+                          totalPages={pagination.totalPages}
+                          onPageChange={handlePageChange}
+                          pageSize={pagination.pageSize}
+                          onPageSizeChange={handlePageSizeChange}
+                          totalItems={pagination.totalItems}
+                          hasNext={pagination.hasNext}
+                          hasPrevious={pagination.hasPrevious}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="p-6 text-center">
+                      <p className="text-gray-500 dark:text-gray-400">No papers found. Try a different search term.</p>
                     </div>
                   )}
                 </div>
               </>
+            ) : (
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+                  Clusters View
+                </h2>
+                <ClustersChart 
+                  papers={items}
+                  onPaperSelect={handlePaperSelect}
+                  expandedView={true}
+                />
+              </div>
             )}
             
-            {activeTab === 'clusters' && (
-              <div className="space-y-8">
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-                    Paper Clusters
-                  </h2>
-                  <div className="h-[600px]">
-                    <ClustersChart 
-                      papers={items} 
-                      onPaperSelect={handlePaperSelect}
-                      expandedView={true}
-                    />
-                  </div>
-                </div>
+            {/* Loading indicator for subsequent pages */}
+            {isLoading && pagination.currentPage > 1 && (
+              <div className="fixed bottom-4 right-4 bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg flex items-center space-x-2 z-50">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-500"></div>
+                <span className="text-sm text-gray-600 dark:text-gray-300">Loading more papers...</span>
               </div>
             )}
           </div>

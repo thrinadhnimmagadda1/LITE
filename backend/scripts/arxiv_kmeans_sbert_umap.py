@@ -134,16 +134,38 @@ def is_relevant(paper, must: List[str], opt: List[str]) -> bool:
     """
     if not paper or not hasattr(paper, 'title') or not hasattr(paper, 'summary'):
         return False
-        
-    content = f"{paper.title or ''} {paper.summary or ''}".lower()
+    
+    title = paper.title or ''
+    summary = paper.summary or ''
+    content = f"{title} {summary}".lower()
+    
+    # Debug logging
+    debug_info = []
     
     # Check for must-have keywords
-    has_must = any(keyword in content for keyword in must) if must else True
+    if must:
+        has_must = any(keyword in content for keyword in must)
+        debug_info.append(f"must_include: {has_must} ({', '.join(must)})")
+    else:
+        has_must = True
+        debug_info.append("no must_include terms")
     
-    # Check for optional keywords if any must-have keywords were found
-    has_opt = any(keyword in content for keyword in opt) if opt and has_must else True
+    # Check for optional keywords if any are provided
+    if opt:
+        has_opt = any(keyword in content for keyword in opt)
+        debug_info.append(f"optional: {has_opt} ({', '.join(opt)})")
+        # Paper is relevant if it matches must-have (if any) AND/OR optional keywords
+        is_relevant = (has_must or has_opt)
+    else:
+        # If no optional keywords, only check must-have
+        is_relevant = has_must
     
-    return has_must and has_opt
+    # Log detailed debug info for a sample of papers
+    if random.random() < 0.01:  # Log about 1% of papers for debugging
+        debug_str = ", ".join(debug_info)
+        logging.debug(f"Paper check - Title: {title[:50]}... - {debug_str} - Relevant: {is_relevant}")
+    
+    return is_relevant
 
 # This function saves a csv file with columns of Title, Abstract, Authors, and Cluster
 def save_csv(papers, labels, name, out_dir):

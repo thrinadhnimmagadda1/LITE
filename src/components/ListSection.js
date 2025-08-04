@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const ListSection = ({ items = [], onCategorySelect, onItemClick }) => {
@@ -8,14 +8,23 @@ const ListSection = ({ items = [], onCategorySelect, onItemClick }) => {
   const toggleAbstract = (e, itemId) => {
     e.preventDefault();
     e.stopPropagation();
-    setExpandedId(prevId => (prevId === itemId ? null : itemId));
+    
+    // Close all abstracts first, then open the clicked one if it was closed
+    setExpandedId(prevId => {
+      // If clicking the currently expanded item, close it
+      if (prevId === itemId) {
+        return null;
+      }
+      // Otherwise, expand the clicked item
+      return itemId;
+    });
   };
 
   const handleItemClick = (e, itemId) => {
-    const isAbstractClick = e.target.closest('.abstract-toggle') || 
-                         e.target.closest('.abstract-content');
+    // Only navigate if the click is not on the abstract toggle or its children
+    const isAbstractToggle = e.target.closest('.abstract-toggle');
     
-    if (!isAbstractClick) {
+    if (!isAbstractToggle) {
       onItemClick?.(itemId);
       navigate(`/item/${itemId}`);
     }
@@ -41,10 +50,12 @@ const ListSection = ({ items = [], onCategorySelect, onItemClick }) => {
     return value !== undefined && value !== null ? value : defaultValue;
   };
 
-  // Generate a unique ID for each item using a counter
-  let counter = 0;
+  // Use a ref to maintain a stable counter across renders
+  const counterRef = useRef(0);
+  
+  // Generate a unique ID for each item
   const generateItemId = (item, index) => {
-    counter += 1;
+    counterRef.current += 1;
     
     // First try to use existing unique identifiers
     if (item?.id) return `item-${item.id}`;
@@ -58,23 +69,24 @@ const ListSection = ({ items = [], onCategorySelect, onItemClick }) => {
     // Create a content-based key if possible
     if (title || line1 || abstract) {
       const contentKey = `${title}-${line1}-${abstract}`.replace(/\s+/g, '-');
-      return `content-${contentKey}-${counter}`;
+      return `content-${contentKey}-${counterRef.current}`;
     }
     
     // Fallback to a completely unique key
-    return `fallback-${index}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}-${counter}`;
+    return `fallback-${index}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}-${counterRef.current}`;
   };
 
   const renderPaperItem = (item, index) => {
     if (!item) return null;
     
-    // Generate a unique ID for this item
-    const itemId = generateItemId(item, index);
+    // Use existing ID or generate a stable one
+    const itemId = item.id || `item-${index}-${item.title?.substring(0, 20) || 'paper'}`;
     const title = getItemProperty(item, 'title', 'Untitled Paper');
     const line1 = getItemProperty(item, 'line1');
     const line2 = getItemProperty(item, 'line2');
     const technologies = Array.isArray(item.technologies) ? item.technologies : [];
     const hasAbstract = Boolean(item.abstract || item.line3);
+    const isExpanded = expandedId === itemId;
     
     return (
       <div 
@@ -124,12 +136,12 @@ const ListSection = ({ items = [], onCategorySelect, onItemClick }) => {
                 <button
                   onClick={(e) => toggleAbstract(e, itemId)}
                   className="abstract-toggle flex items-center text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 focus:outline-none transition-all duration-200 group"
-                  aria-expanded={expandedId === itemId}
+                  aria-expanded={isExpanded}
                   aria-controls={`abstract-${itemId}`}
                 >
                   <span className="flex items-center">
                     <svg 
-                      className={`w-4 h-4 mr-1.5 transition-transform duration-200 ${expandedId === itemId ? 'transform rotate-180' : ''}`} 
+                      className={`w-4 h-4 mr-1.5 transition-transform duration-200 ${isExpanded ? 'transform rotate-180' : ''}`} 
                       fill="none" 
                       stroke="currentColor" 
                       viewBox="0 0 24 24" 
@@ -137,7 +149,7 @@ const ListSection = ({ items = [], onCategorySelect, onItemClick }) => {
                     >
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
-                    {expandedId === itemId ? 'Hide Abstract' : 'Read Abstract'}
+                    {isExpanded ? 'Hide Abstract' : 'Read Abstract'}
                   </span>
                 </button>
               )}
@@ -163,9 +175,9 @@ const ListSection = ({ items = [], onCategorySelect, onItemClick }) => {
               <div 
                 id={`abstract-${itemId}`}
                 className={`mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 overflow-hidden transition-all duration-300 ease-in-out ${
-                  expandedId === itemId ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
+                  isExpanded ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
                 }`}
-                aria-hidden={expandedId !== itemId}
+                aria-hidden={!isExpanded}
               >
                 <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 mt-2">
                   <div className="flex items-center mb-2">
