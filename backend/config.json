@@ -2,10 +2,9 @@
     "log_dir": "logs",
     "output_dir": "out",
     "must_include": [
-        "data mining",
-        "llm"
+        "data mining"
     ],
     "optional_keywords": [
-        "BERT"
+        "ll"
     ]
 }

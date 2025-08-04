@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CSV Access Test</title>
+    <script>
+        async function testCSV() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Testing CSV access...';
+            
+            try {
+                // Test 1: Basic fetch
+                resultDiv.innerHTML += '<br>1. Attempting to fetch CSV...';
+                const response = await fetch('/data/time_range_full_year_clean.csv');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                // Test 2: Read text
+                resultDiv.innerHTML += '<br>2. Reading response as text...';
+                const text = await response.text();
+                
+                // Test 3: Basic parsing
+                resultDiv.innerHTML += '<br>3. Parsing CSV...';
+                const lines = text.split('\n');
+                const headers = lines[0].split(',');
+                
+                // Show results
+                resultDiv.innerHTML = `
+                    <h3>Success!</h3>
+                    <p>CSV file loaded successfully.</p>
+                    <p>Headers: ${headers.join(', ')}</p>
+                    <p>Total lines: ${lines.length}</p>
+                    <p>First 200 chars of first line:</p>
+                    <pre>${lines[0].substring(0, 200)}</pre>
+                `;
+                
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <h3>Error!</h3>
+                    <p>${error.message}</p>
+                    <p>Make sure the development server is running and the file exists at public/data/</p>
+                    <p>Check browser console (F12) for more details.</p>
+                `;
+                console.error('Error details:', error);
+            }
+        }
+    </script>
+</head>
+<body onload="testCSV()">
+    <h1>CSV File Access Test</h1>
+    <div id="result"></div>
+</body>
+</html>
