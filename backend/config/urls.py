@@ -32,17 +32,21 @@ def custom_404_view(request, exception=None):
         ]
     }, status=404)
 
+# Main URL patterns
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('api.urls')),
     
     # Root URL handler
     path('', TemplateView.as_view(template_name='index.html'), name='home'),
-    
-    # Catch-all for undefined URLs
-    re_path(r'^.*/$', custom_404_view)
 ]
 
-# Serve media files in development
+# Add catch-all pattern only if not in debug mode
+if not settings.DEBUG:
+    urlpatterns += [
+        re_path(r'^.*/$', custom_404_view)
+    ]
+
+# Serve media files in development only
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
