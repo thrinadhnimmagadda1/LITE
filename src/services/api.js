@@ -1,4 +1,5 @@
-const API_BASE_URL = 'http://localhost:8000/api'; // Updated port to match Django backend
+// Use environment variable or default to development URL
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 /**
  * Processes raw paper data into a consistent format for the frontend
