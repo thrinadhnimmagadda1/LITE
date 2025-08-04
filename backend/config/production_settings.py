@@ -10,13 +10,14 @@ import dj_database_url
 SECRET_KEY = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+DEBUG = False
 
-# Update allowed hosts with your production domain
+# Allowed hosts for production
 ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
-    '.onrender.com',  # For Render.com
+    '.onrender.com',
+    'lite-evolution-backend.onrender.com',  # Your specific Render URL
 ]
 
 # Database

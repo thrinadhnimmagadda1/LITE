@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LITE Backend API</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        .endpoint {
+            background-color: #f8f9fa;
+            border-left: 4px solid #3498db;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 0 4px 4px 0;
+        }
+        code {
+            background-color: #f1f1f1;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        .container {
+            margin-top: 30px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>LITE Backend API</h1>
+        <p>Welcome to the LITE (Literature Insight and Text Exploration) Backend API.</p>
+        
+        <h2>Available Endpoints</h2>
+        
+        <div class="endpoint">
+            <h3>GET /api/papers/</h3>
+            <p>Retrieve a list of research papers with optional pagination.</p>
+            <p><strong>Query Parameters:</strong></p>
+            <ul>
+                <li><code>page</code> - Page number (default: 1)</li>
+                <li><code>page_size</code> - Number of items per page (default: 20, max: 100)</li>
+            </ul>
+            <p><strong>Example:</strong> <code>GET /api/papers/?page=1&page_size=10</code></p>
+        </div>
+        
+        <div class="endpoint">
+            <h3>POST /api/search-terms/</h3>
+            <p>Update search terms and trigger paper processing.</p>
+            <p><strong>Request Body (JSON):</strong></p>
+            <pre>{
+    "query": "machine learning",
+    "keywords": "deep learning, neural networks"
+}</pre>
+        </div>
+        
+        <div class="endpoint">
+            <h3>GET /admin/</h3>
+            <p>Access the admin interface (admin credentials required).</p>
+        </div>
+        
+        <p>For more information, please refer to the <a href="https://github.com/thrinadhnimmagadda1/LITE" target="_blank">GitHub repository</a>.</p>
+    </div>
+</body>
+</html>
