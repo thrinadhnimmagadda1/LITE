@@ -2,9 +2,9 @@
     "log_dir": "logs",
     "output_dir": "out",
     "must_include": [
-        "data mining"
+        "machine leaning"
     ],
     "optional_keywords": [
-        "ll"
+        "data mining"
     ]
 }
