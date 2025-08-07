@@ -1,88 +1,90 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useSearch } from '../context/SearchContext';
+import SearchForm from './SearchForm';
 
 const SearchPage = ({ onSearch }) => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [optionalKeywords, setOptionalKeywords] = useState('');
-  const navigate = useNavigate();
+  const { searchHistory } = useSearch();
+  const [initialSearch, setInitialSearch] = useState({ query: '', keywords: '' });
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (searchQuery.trim()) {
-      // Combine main search query with optional keywords if provided
-      const searchParams = {
-        query: searchQuery.trim(),
-        keywords: optionalKeywords.trim()
-      };
-      onSearch(searchParams);
+  // Initialize form with current search if available
+  useEffect(() => {
+    if (searchHistory.length > 0) {
+      const lastSearch = searchHistory[0]; // Get the most recent search
+      setInitialSearch({
+        query: lastSearch.query || '',
+        keywords: lastSearch.keywords || ''
+      });
     }
-  };
+  }, [searchHistory]);
+
+  const handleSearch = useCallback((searchParams) => {
+    onSearch(searchParams);
+  }, [onSearch]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 text-center">
-        <div>
-          <h2 className="mt-6 text-4xl font-extrabold text-gray-900">
-            LITE
-          </h2>
-          <p className="mt-2 text-sm text-gray-600">
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto">
+        <div className="text-center mb-10">
+          <h1 className="text-5xl font-bold text-indigo-600 mb-2">LITE</h1>
+          <p className="text-lg text-gray-600">
             Discover the latest research papers in your field of interest
           </p>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="space-y-4">
-            <div className="rounded-md shadow-sm">
-              <div>
-                <label htmlFor="search" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 text-left">
-                  Search terms (required)
-                </label>
-                <input
-                  id="search"
-                  name="search"
-                  type="text"
-                  required
-                  className="appearance-none rounded-lg relative block w-full px-5 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 text-base"
-                  placeholder="e.g., machine learning, AI, deep learning"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-            </div>
-            
-            <div className="rounded-md shadow-sm">
-              <div>
-                <label htmlFor="optional-keywords" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 text-left">
-                  Optional keywords (comma-separated)
-                </label>
-                <input
-                  id="optional-keywords"
-                  name="optional-keywords"
-                  type="text"
-                  className="appearance-none rounded-lg relative block w-full px-5 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 text-base"
-                  placeholder="e.g., transformer, attention, BERT (optional)"
-                  value={optionalKeywords}
-                  onChange={(e) => setOptionalKeywords(e.target.value)}
-                />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 text-left">
-                  Add specific terms to refine your search (optional)
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <button
-              type="submit"
-              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-lg font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200"
-            >
-              Search Papers
-            </button>
-          </div>
+        
+        <div className="bg-white rounded-xl shadow-md p-8 mb-10">
+          <h2 className="text-2xl font-semibold text-gray-800 mb-6 text-center">Search Research Papers</h2>
+          <SearchForm 
+            onSearch={handleSearch} 
+            initialQuery={initialSearch.query}
+            initialKeywords={initialSearch.keywords}
+          />
           
-          <div className="mt-4 text-sm text-gray-500">
+          <div className="mt-4 text-sm text-gray-500 text-center">
             <p>Example searches: "neural networks", "computer vision", "NLP"</p>
           </div>
-        </form>
+        </div>
+        
+        {searchHistory.length > 0 && (
+          <div className="bg-white rounded-xl shadow-md p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-800">Recently Searched</h3>
+              <button 
+                onClick={() => setInitialSearch({ query: '', keywords: '' })}
+                className="text-sm text-indigo-600 hover:text-indigo-800 transition-colors"
+              >
+                Clear All
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {searchHistory.slice(0, 6).map((search, index) => (
+                <button
+                  key={index}
+                  onClick={() => {
+                    setInitialSearch({
+                      query: search.query,
+                      keywords: search.keywords || ''
+                    });
+                    // Auto-scroll to search form
+                    document.getElementById('search-form')?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className="group flex flex-col p-4 bg-gray-50 hover:bg-indigo-50 rounded-lg border border-gray-200 hover:border-indigo-200 transition-all duration-200 text-left"
+                >
+                  <span className="font-medium text-gray-900 group-hover:text-indigo-700 transition-colors">
+                    {search.query}
+                  </span>
+                  {search.keywords && (
+                    <span className="mt-1 text-sm text-gray-500 group-hover:text-indigo-500 transition-colors">
+                      + {search.keywords}
+                    </span>
+                  )}
+                  <span className="mt-2 text-xs text-gray-400">
+                    {new Date(search.timestamp).toLocaleString()}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

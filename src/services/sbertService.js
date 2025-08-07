@@ -1,10 +1,9 @@
 import axios from 'axios';
-
-const API_URL = 'http://localhost:8000';
+import { API_ENDPOINTS } from '../config';
 
 export const getSbertData = async () => {
   try {
-    const response = await axios.get(`${API_URL}/api/papers/`);
+    const response = await axios.get(API_ENDPOINTS.PAPERS);
     return response.data;
   } catch (error) {
     console.error('Error fetching SBERT data:', error);

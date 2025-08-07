@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { fetchPapers, updateSearchTerms } from './services/api';
 import { ThemeProvider } from './context/ThemeContext';
+import { useSearch } from './context/SearchContext';
+import SearchForm from './components/SearchForm';
 import PublicationsChart from './components/PublicationsChart';
 import ClustersChart from './components/ClustersChart';
 import ListSection from './components/ListSection';
@@ -12,6 +14,9 @@ import './App.css';
 function App() {
   // State management
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Get search context
+  const { currentSearch, setCurrentSearch } = useSearch();
   const [hasSearched, setHasSearched] = useState(false);
   const [activeTab, setActiveTab] = useState('papers');
   const [items, setItems] = useState([]);
@@ -450,19 +455,19 @@ function App() {
     setSearchTerm(query);
     setHasSearched(true);
     setIsLoading(true);
+    setSelectedMonthIndex(null);
+    setSelectedCategory(null);
     
     try {
       // Call the backend API with search parameters
       const searchPayload = {
         query: query,
-        ...(keywords && { keywords: keywords.split(',').map(k => k.trim()).filter(Boolean) })
+        ...(keywords && { 
+          keywords: keywords.split(',').map(k => k.trim()).filter(Boolean) 
+        })
       };
       
       console.log('Sending search payload:', searchPayload);
-      
-      // Poll for new results with retries
-      const maxRetries = 5;
-      let retryCount = 0;
       
       // First update the search terms in the backend
       const response = await updateSearchTerms(searchPayload);
@@ -475,19 +480,20 @@ function App() {
         return;
       }
       
-      // Reset to first page when performing a new search
-      await loadPapers(1, pagination.pageSize);
-      
-    } catch (error) {
-      console.error('Error during search:', {
-        error: error.message,
-        stack: error.stack,
-        name: error.name
+      // Update current search in context
+      setCurrentSearch({
+        query: query,
+        keywords: keywords
       });
+      
+      // Reset to first page when performing a new search
+      await loadPapers(1, pagination.pageSize, searchParams);
+    } catch (error) {
+      console.error('Search failed:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [pagination.pageSize, loadPapers]);
+  }, [pagination.pageSize, loadPapers, setCurrentSearch]);
 
   // Handle cluster filter
   const filterByCluster = useCallback((clusterName) => {
@@ -562,7 +568,7 @@ function App() {
     setSearchTerm('');
   }, [items]);
 
-  // Clear search and reset filters
+  // Clear search 
   const clearSearch = useCallback(() => {
     setSearchTerm('');
     setFilteredItems([...items]);
@@ -638,18 +644,42 @@ function App() {
     <ThemeProvider>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
         <Header 
-          searchTerm={searchTerm} 
-          onSearch={handleSearch} 
-          onSearchTermChange={setSearchTerm}
           activeTab={activeTab}
           onTabChange={setActiveTab}
           className="sticky top-0 z-10"
-          showBackButton={true}
+          showBackButton={hasSearched}
           onBack={() => setHasSearched(false)}
         />
         
+        {/* Search Form under Header */}
+        <div className="bg-white dark:bg-gray-800 shadow-md">
+          <div className="container mx-auto px-4 py-4">
+            <div className="max-w-4xl mx-auto">
+              <SearchForm 
+                onSearch={handleSearch} 
+                initialQuery={currentSearch?.query || ''}
+                initialKeywords={currentSearch?.keywords || ''}
+                compact={true}
+              />
+            </div>
+          </div>
+        </div>
+        
         <main className="container mx-auto px-4 py-6">
           <div className="space-y-8">
+            {/* Main Search Form - Only show on search page */}
+            {!hasSearched && (
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+                  Search Papers
+                </h2>
+                <SearchForm 
+                  onSearch={handleSearch} 
+                  initialQuery={currentSearch?.query || ''}
+                  initialKeywords={currentSearch?.keywords || ''}
+                />
+              </div>
+            )}
             {activeTab === 'papers' ? (
               <>
                 {/* Charts Section */}
@@ -758,7 +788,7 @@ function App() {
             )}
           </div>
         </main>
-      </div>
+        </div>
     </ThemeProvider>
   );
 }

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Bar } from 'react-chartjs-2';
 import axios from 'axios';
+import { API_ENDPOINTS } from '../config';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -52,7 +53,7 @@ const ClustersChart = () => {
     const fetchClusterData = async () => {
       try {
         setLoading(true);
-        const response = await axios.get('http://localhost:8000/api/papers/');
+        const response = await axios.get(API_ENDPOINTS.PAPERS);
         const papers = response.data.papers || [];
         
         // Count papers per cluster
