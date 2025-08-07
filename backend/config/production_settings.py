@@ -28,6 +28,7 @@ ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
     '.onrender.com',
+    'lite-backend.onrender.com',
     'lite-evolution-backend.onrender.com',
     'lite-evolution-backend',
 ]
@@ -60,10 +61,11 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 
 # CORS settings
-CORS_ALLOWED_ORIGINS = [
-    "https://your-frontend-domain.com",
-    "http://localhost:3000",
-]
+CORS_ALLOW_ALL_ORIGINS = True  # For now, allow all origins
+# CORS_ALLOWED_ORIGINS = [
+#     "https://lite-frontend.onrender.com",
+#     "http://localhost:3000",
+# ]
 
 # Logging
 LOGGING = {
