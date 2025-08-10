@@ -1,54 +1,275 @@
 import json
-import subprocess
 import os
+import subprocess
+from datetime import datetime, timedelta
 from pathlib import Path
 from django.conf import settings
+from django.core.cache import cache
+from django.db.models import Count, Q
+from django.views.decorators.cache import cache_page
 from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from django.views.decorators.vary import vary_on_cookie
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.pagination import PageNumberPagination
+from .models import Paper, PaperImportLog
 
-class SearchTermsAPIView(APIView):
-    # Disable CSRF for this view for testing purposes
-    @csrf_exempt
+
+class ClearSearchTermsView(APIView):
+    """View for clearing search terms."""
+    @method_decorator(csrf_exempt)
     def dispatch(self, request, *args, **kwargs):
         return super().dispatch(request, *args, **kwargs)
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.action = None
+    
+    def get(self, request):
+        # Delegate to SearchTermsAPIView.clear
+        return SearchTermsAPIView().clear(request)
+
+
+class StandardResultsSetPagination(PageNumberPagination):
+    """Custom pagination class with configurable page size."""
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+    
+    def get_paginated_response(self, data):
+        return Response({
+            'links': {
+                'next': self.get_next_link(),
+                'previous': self.get_previous_link()
+            },
+            'count': self.page.paginator.count,
+            'total_pages': self.page.paginator.num_pages,
+            'current_page': self.page.number,
+            'results': data
+        })
+
+
+class PapersAPIView(APIView):
+    """API endpoint for retrieving and searching papers."""
+    pagination_class = StandardResultsSetPagination
+    
+    def get_queryset(self):
+        """Return the base queryset with common filtering."""
+        queryset = Paper.objects.all()
         
-    @classmethod
-    def as_view(cls, **initkwargs):
-        # Store the action from the URL pattern
-        action = initkwargs.pop('action', None)
+        # Apply search filters if provided
+        search_query = self.request.query_params.get('search', '').strip()
+        if search_query:
+            queryset = queryset.filter(
+                Q(title__icontains=search_query) |
+                Q(abstract__icontains=search_query) |
+                Q(authors__icontains=search_query)
+            )
         
-        def view(request, *args, **kwargs):
-            self = cls(**initkwargs)
-            self.action = action
-            self.request = request
-            self.args = args
-            self.kwargs = kwargs
-            return self.dispatch(request, *args, **kwargs)
+        # Filter by cluster if specified
+        cluster = self.request.query_params.get('cluster')
+        if cluster is not None:
+            try:
+                cluster_id = int(cluster)
+                queryset = queryset.filter(cluster=cluster_id)
+            except (ValueError, TypeError):
+                pass
+        
+        # Filter by year if specified
+        year = self.request.query_params.get('year')
+        if year is not None:
+            try:
+                year_int = int(year)
+                queryset = queryset.filter(year=year_int)
+            except (ValueError, TypeError):
+                pass
+        
+        # Filter by month if specified
+        month = self.request.query_params.get('month')
+        if month is not None:
+            queryset = queryset.filter(month__iexact=month)
+        
+        return queryset.order_by('-published_date', '-id')
+    
+    def get_cluster_stats(self):
+        """Get statistics about paper clusters."""
+        cache_key = 'cluster_stats'
+        stats = cache.get(cache_key)
+        
+        if stats is None:
+            stats = Paper.get_cluster_stats()
+            cache.set(cache_key, stats, 3600)  # Cache for 1 hour
             
-        view.view_class = cls
-        view.view_initkwargs = initkwargs
+        return stats
+    
+    def get_publication_timeline(self, queryset):
+        """Generate publication timeline data."""
+        timeline = list(
+            queryset.exclude(year__isnull=True, month__isnull=True)
+                   .values('year', 'month')
+                   .annotate(count=Count('id'))
+                   .order_by('year', 'month')
+        )
+        return timeline
+    
+    def get_category_distribution(self, queryset):
+        """Generate category distribution data."""
+        # This is a simplified example - adjust based on your category structure
+        categories = {}
+        for paper in queryset.only('categories').iterator(chunk_size=1000):
+            if paper.categories:
+                for cat in paper.categories.split(';'):
+                    cat = cat.strip()
+                    if cat:
+                        categories[cat] = categories.get(cat, 0) + 1
         
-        # Copy attributes from the dispatch method to the view
-        view.__doc__ = cls.__doc__
-        view.__module__ = cls.__module__
-        view.__name__ = cls.__name__
-        view.__qualname__ = cls.__qualname__
+        return [{'category': k, 'count': v} 
+               for k, v in sorted(categories.items(), key=lambda x: -x[1])[:10]]
+    
+    def get_serialized_paper(self, paper):
+        """Convert a Paper model instance to a serializable dict."""
+        return {
+            'id': paper.arxiv_id,
+            'title': paper.title,
+            'authors': paper.authors,
+            'abstract': paper.abstract,
+            'published': paper.published_date.isoformat() if paper.published_date else None,
+            'cluster': paper.cluster,
+            'cluster_label': f'Cluster {paper.cluster}' if paper.cluster is not None else 'Unclustered',
+            'url': paper.url,
+            'categories': paper.categories,
+            'Month': paper.month,
+            'Year': paper.year,
+            '_original': {
+                'Month': paper.month,
+                'Year': paper.year,
+                'published': paper.published_date.isoformat() if paper.published_date else None,
+                'categories': paper.categories,
+                'authors': paper.authors,
+                'title': paper.title,
+                'abstract': paper.abstract,
+                'url': paper.url,
+                'cluster': paper.cluster
+            }
+        }
+    
+    @method_decorator(cache_page(60 * 5))  # Cache for 5 minutes
+    @method_decorator(vary_on_cookie)
+    def get(self, request):
+        """
+        Get paginated papers with optional filtering.
         
-        return view
-        
+        Query Parameters:
+            page: Page number (default: 1)
+            page_size: Number of items per page (default: 20, max: 100)
+            search: Optional search query
+            cluster: Optional cluster ID to filter by
+            year: Optional year to filter by
+            month: Optional month to filter by
+        """
+        try:
+            # Get base queryset with filters applied
+            queryset = self.get_queryset()
+            
+            # Get paginated results
+            paginator = self.pagination_class()
+            page = paginator.paginate_queryset(queryset, request)
+            
+            if page is not None:
+                # Serialize the page of papers
+                papers = [self.get_serialized_paper(paper) for paper in page]
+                
+                # Get cluster stats (cached)
+                cluster_stats = self.get_cluster_stats()
+                
+                # Get additional statistics
+                timeline_data = self.get_publication_timeline(queryset)
+                category_data = self.get_category_distribution(queryset)
+                
+                # Build response data
+                response_data = {
+                    'papers': papers,
+                    'clustering': {
+                        'available': True,
+                        'stats': {
+                            'total_papers': queryset.count(),
+                            'num_clusters': len(set(queryset.exclude(cluster__isnull=True)
+                                                 .values_list('cluster', flat=True))),
+                            'papers_per_cluster': cluster_stats
+                        },
+                        'source_file': 'database',
+                        'last_modified': Paper.objects.latest('updated_at').updated_at.timestamp()
+                    },
+                    'timeline': timeline_data,
+                    'categories': category_data
+                }
+                
+                # Add pagination info
+                response = paginator.get_paginated_response(response_data)
+                return response
+            
+            # If pagination is not used (shouldn't happen with our settings)
+            papers = [self.get_serialized_paper(paper) for paper in queryset]
+            return Response({
+                'pagination': {
+                    'current_page': 1,
+                    'page_size': len(papers),
+                    'total_pages': 1,
+                    'total_items': len(papers),
+                    'has_next': False,
+                    'has_previous': False
+                },
+                'results': {
+                    'papers': papers,
+                    'clustering': {
+                        'available': True,
+                        'stats': {},
+                        'source_file': 'database',
+                        'last_modified': Paper.objects.latest('updated_at').updated_at.timestamp()
+                    },
+                    'timeline': self.get_publication_timeline(queryset),
+                    'categories': self.get_category_distribution(queryset)
+                }
+            })
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response(
+                {'error': f'Failed to retrieve papers: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class StandardResultsSetPagination(PageNumberPagination):
+    """Custom pagination class with configurable page size."""
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+    def get_paginated_response(self, data):
+        return Response({
+            'pagination': {
+                'current_page': self.page.number,
+                'page_size': self.page.paginator.per_page,
+                'total_pages': self.page.paginator.num_pages,
+                'total_items': self.page.paginator.count,
+                'has_next': self.page.has_next(),
+                'has_previous': self.page.has_previous(),
+            },
+            'results': data
+        })
+
+
+class SearchTermsAPIView(APIView):
+    """API endpoint for managing search terms."""
+    @method_decorator(csrf_exempt, name='dispatch')
+    def dispatch(self, request, *args, **kwargs):
+        return super().dispatch(request, *args, **kwargs)
+    
     def get_config_path(self):
-        """Helper method to get the config file path"""
+        """Get the path to the config file."""
         return Path(settings.BASE_DIR).parent / 'backend' / 'config.json'
-        
-    def get_script_path(self):
-        """Helper method to get the script path"""
-        return Path(settings.BASE_DIR).parent / 'backend' / 'scripts' / 'arxiv_kmeans_sbert_umap.py'
-        
+    
+    @method_decorator(cache_page(60 * 15))  # Cache for 15 minutes
     def get(self, request):
         """Get the current search terms from config.json"""
         config_path = self.get_config_path()
@@ -59,106 +280,63 @@ class SearchTermsAPIView(APIView):
                 'must_include': config.get('must_include', []),
                 'optional_keywords': config.get('optional_keywords', [])
             })
-        except Exception as e:
-            return Response(
-                {'error': f'Failed to read config file: {str(e)}'}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-            
-    def clear_must_include(self):
-        """Clear the must_include array in config.json"""
-        config_path = self.get_config_path()
-        try:
-            # Read the current config
-            with open(config_path, 'r') as f:
-                config = json.load(f)
-            
-            # Print the current config for debugging
-            print(f"Current config before clear: {config}")
-            
-            # Clear the must_include array
-            config['must_include'] = []
-            
-            # Print the updated config for debugging
-            print(f"Config after clear: {config}")
-            
-            # Save the updated config
-            with open(config_path, 'w') as f:
-                json.dump(config, f, indent=4)
-            
-            # Verify the file was written correctly
-            with open(config_path, 'r') as f:
-                saved_config = json.load(f)
-                print(f"Config after save: {saved_config}")
-                if saved_config.get('must_include') != []:
-                    return False, "Failed to clear must_include array"
-                
-            return True, None
-            
-        except Exception as e:
-            import traceback
-            print(f"Error in clear_must_include: {str(e)}\n{traceback.format_exc()}")
-            return False, str(e)
-
-    def get(self, request):
-        """
-        Handle GET requests:
-        - If no action, return current search terms
-        - If action=clear, clear the must_include array
-        """
-        action = getattr(self, 'action', None)
-        
-        if action == 'clear':
-            success, error = self.clear_must_include()
-            if success:
-                return Response({'message': 'Search terms cleared successfully'})
-            else:
-                return Response(
-                    {'error': f'Failed to clear search terms: {error}'}, 
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
-                
-        # Default behavior: return current search terms
-        config_path = self.get_config_path()
-        try:
-            with open(config_path, 'r') as f:
-                config = json.load(f)
+        except FileNotFoundError:
+            # Return default values if config file doesn't exist
             return Response({
-                'must_include': config.get('must_include', []),
-                'optional_keywords': config.get('optional_keywords', [])
+                'must_include': [],
+                'optional_keywords': []
             })
         except Exception as e:
             return Response(
                 {'error': f'Failed to read config file: {str(e)}'}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    
+    def clear(self, request):
+        """
+        Clear the current search terms and reset the config.
+        This endpoint is called before setting new search terms to ensure a clean state.
+        """
+        config_path = self.get_config_path()
+        try:
+            # Create or reset the config file with empty values
+            with open(config_path, 'w') as f:
+                json.dump({
+                    'must_include': [],
+                    'optional_keywords': []
+                }, f, indent=4)
             
+            return Response({
+                'message': 'Search terms cleared successfully',
+                'must_include': [],
+                'optional_keywords': []
+            })
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to clear search terms: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
     def post(self, request):
         """
-        Handle POST requests to update search terms in config.json and trigger arxiv_extractor_abstract_summary.py
+        Update search terms in config.json and trigger data processing.
         Expected request data: {
             "search_terms": ["term1", "term2", ...],
             "keywords": ["keyword1", "keyword2", ...]  # optional
         }
         """
-                
-        # Get search terms (required) and keywords (optional)
+        config_path = self.get_config_path()
         search_terms = request.data.get('search_terms', [])
         keywords = request.data.get('keywords', [])
         
-        if not search_terms and not keywords:
-            return Response(
-                {'error': 'No search terms or keywords provided'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        config_path = self.get_config_path()
-        script_path = self.get_script_path()
-        
         try:
-            # Read current config
-            with open(config_path, 'r') as f:
-                config = json.load(f)
+            # Read current config or create a new one if it doesn't exist
+            if config_path.exists():
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+            else:
+                config = {}
             
             # Update must_include terms if provided
             if search_terms:
@@ -172,9 +350,11 @@ class SearchTermsAPIView(APIView):
             with open(config_path, 'w') as f:
                 json.dump(config, f, indent=4)
             
+            # Define the path to the script
+            script_path = Path(settings.BASE_DIR).parent / 'backend' / 'scripts' / 'arxiv_kmeans_sbert_umap.py'
+            
             # Run the arxiv extractor script
             try:
-                # First run the abstract summary script
                 result = subprocess.run(
                     ['python', str(script_path)],
                     capture_output=True,
@@ -191,31 +371,9 @@ class SearchTermsAPIView(APIView):
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR
                     )
                 
-                # Then run the kmeans sbert umap script
-                kmeans_script_path = script_path.parent / 'arxiv_kmeans_sbert_umap.py'
-                kmeans_result = subprocess.run(
-                    ['python', str(kmeans_script_path)],
-                    capture_output=True,
-                    text=True,
-                    cwd=str(script_path.parent)
-                )
-                
-                if kmeans_result.returncode != 0:
-                    # Log the error but don't fail the request - clustering is optional
-                    print(f"Warning: Clustering script failed with error: {kmeans_result.stderr}")
-                    return Response(
-                        {
-                            'message': 'Search terms updated and papers fetched successfully',
-                            'warning': 'Clustering was not performed due to insufficient data or other issues',
-                            'details': kmeans_result.stderr[:500]  # Include first 500 chars of error
-                        },
-                        status=status.HTTP_200_OK
-                    )
-                
                 return Response({
                     'message': 'Search terms updated and processing completed successfully',
-                    'abstract_output': result.stdout,
-                    'clustering_output': kmeans_result.stdout
+                    'output': result.stdout
                 })
                 
             except Exception as e:
@@ -412,16 +570,35 @@ class PapersAPIView(APIView):
                                 if len(abstract) > 0:
                                     break
                         
+                        # Extract Month and Year from the row if available
+                        month = row.get('Month', row.get('month', None))
+                        year = row.get('Year', row.get('year', None))
+                        
+                        # If Month/Year not directly available, try to extract from published date
+                        published_date = row.get('Published', row.get('published', row.get('Date', '')))
+                        if pd.notna(published_date) and (month is None or year is None):
+                            try:
+                                from datetime import datetime
+                                date_obj = datetime.strptime(str(published_date), '%Y-%m-%d')
+                                if month is None:
+                                    month = date_obj.strftime('%B')  # Full month name
+                                if year is None:
+                                    year = date_obj.year
+                            except (ValueError, AttributeError):
+                                pass
+                        
                         paper = {
                             'id': paper_id,
                             'title': title,
                             'authors': row.get('Authors', row.get('authors', 'Unknown Author')),
                             'abstract': abstract,
-                            'published': row.get('Published', row.get('published', row.get('Date', ''))),
+                            'published': published_date,
                             'cluster': int(row.get('Cluster', row.get('cluster', -1))),
                             'cluster_label': f"Cluster {row.get('Cluster', row.get('cluster', '?'))}",
                             'url': f"https://arxiv.org/abs/{paper_id}" if 'id' in row or 'ID' in row else '#',
                             'categories': row.get('Categories', row.get('categories', '')),
+                            'Month': month,
+                            'Year': year,
                             '_original': {col: str(row[col]) for col in df.columns if pd.notna(row[col]) and str(row[col]).strip()}
                         }
                         

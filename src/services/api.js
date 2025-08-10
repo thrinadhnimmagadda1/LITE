@@ -7,11 +7,39 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api
  * @returns {Array} Processed array of paper objects
  */
 const processPapersData = (papersData) => {
-  if (!papersData) return [];
+  console.log('[processPapersData] Starting to process papers data:', { 
+    inputType: Array.isArray(papersData) ? 'array' : typeof papersData,
+    hasPapers: !!(papersData && papersData.papers),
+    papersCount: Array.isArray(papersData) ? papersData.length : (papersData?.papers?.length || 0)
+  });
   
-  // Handle case where papersData is already an array
-  const papers = Array.isArray(papersData) ? papersData : 
-                (papersData.papers || []);
+  if (!papersData) {
+    console.warn('[processPapersData] No papers data provided');
+    return [];
+  }
+  
+  // Handle different response formats
+  let papers = [];
+  if (Array.isArray(papersData)) {
+    // Case 1: Direct array of papers
+    papers = papersData;
+  } else if (papersData.results && Array.isArray(papersData.results)) {
+    // Case 2: Paginated response with results array
+    papers = papersData.results;
+  } else if (papersData.papers && Array.isArray(papersData.papers)) {
+    // Case 3: Response with papers array
+    papers = papersData.papers;
+  } else if (typeof papersData === 'object' && papersData !== null) {
+    // Case 4: Single paper object
+    papers = [papersData];
+  }
+  
+  if (!Array.isArray(papers)) {
+    console.error('[processPapersData] Invalid papers data format:', papers);
+    return [];
+  }
+  
+  console.log(`[processPapersData] Processing ${papers.length} papers`);
   
   return papers.map((paper, index) => {
     try {
@@ -84,7 +112,21 @@ const processPapersData = (papersData) => {
       const categories = paper.Categories || paper.categories || '';
       const cluster = paper.Cluster || paper.cluster || 'Uncategorized';
       
-      return {
+      // Debug log the original paper data
+      console.log('Processing paper - Original data:', {
+        id: paper.id,
+        hasMonth: !!paper.Month,
+        hasYear: !!paper.Year,
+        Month: paper.Month,
+        Year: paper.Year,
+        hasOriginal: !!paper._original,
+        originalMonth: paper._original?.Month,
+        originalYear: paper._original?.Year,
+        published: paper.published
+      });
+
+      // Create the paper object with all fields
+      const processedPaper = {
         id: id,
         title: title,
         authors: authors,
@@ -93,11 +135,33 @@ const processPapersData = (papersData) => {
         url: url,
         categories: categories,
         cluster: cluster,
+        // Include Month and Year if they exist in the original data
+        ...(paper.Month && { Month: paper.Month }),
+        ...(paper.Year && { Year: paper.Year }),
         ...(paper.x !== undefined && { x: paper.x }),
         ...(paper.y !== undefined && { y: paper.y }),
         ...(paper.cluster_label && { cluster_label: paper.cluster_label }),
         _original: paper
       };
+      
+      // If we have Month/Year in the original but not at the top level, add them
+      if (!processedPaper.Month && paper._original?.Month) {
+        console.log('Adding Month from _original:', paper._original.Month);
+        processedPaper.Month = paper._original.Month;
+      }
+      if (!processedPaper.Year && paper._original?.Year) {
+        console.log('Adding Year from _original:', paper._original.Year);
+        processedPaper.Year = paper._original.Year;
+      }
+      
+      console.log('Final processed paper date info:', {
+        id: processedPaper.id,
+        Month: processedPaper.Month,
+        Year: processedPaper.Year,
+        published: processedPaper.published
+      });
+      
+      return processedPaper;
     } catch (error) {
       console.error('Error processing paper:', { error, paper });
       return {
@@ -118,25 +182,28 @@ const processPapersData = (papersData) => {
 /**
  * Fetches paginated papers data including clustering information from the backend
  * @param {Object} options - Pagination options
- * @param {number} [options.page=1] - Page number to fetch (1-based)
- * @param {number} [options.pageSize=20] - Number of items per page (max 100)
- * @returns {Promise<Object>} Object containing paginated papers, clustering data, and pagination info
+ * @param {number} [options.page=1] - Page number to fetch
+ * @param {number} [options.pageSize=20] - Number of items per page
+ * @returns {Promise<Object>} Processed papers data
  */
 export const fetchPapers = async ({ page = 1, pageSize = 20 } = {}) => {
+  console.log('[fetchPapers] Starting to fetch papers', { page, pageSize });
+  
+  // Validate inputs
+  const validPage = Math.max(1, parseInt(page, 10) || 1);
+  const validPageSize = Math.min(100, Math.max(1, parseInt(pageSize, 10) || 20));
+  
+  const queryParams = new URLSearchParams({
+    page: validPage,
+    page_size: validPageSize,
+    _t: Date.now() // Add timestamp to prevent caching
+  });
+  
+  const url = `${API_BASE_URL}/papers/?${queryParams}`;
+  
+  console.log(`[fetchPapers] Fetching papers from: ${url}`);
+  
   try {
-    // Ensure page is at least 1 and pageSize is between 1 and 100
-    const validPage = Math.max(1, parseInt(page, 10) || 1);
-    const validPageSize = Math.min(100, Math.max(1, parseInt(pageSize, 10) || 20));
-    
-    const params = new URLSearchParams({
-      page: validPage,
-      page_size: validPageSize
-    });
-    
-    const url = `${API_BASE_URL}/papers/?${params.toString()}`;
-    console.log('Fetching papers with pagination:', { page: validPage, pageSize: validPageSize });
-    console.log('API URL:', url);
-    
     // Configure request
     const requestHeaders = {
       'Accept': 'application/json',
@@ -184,55 +251,72 @@ export const fetchPapers = async ({ page = 1, pageSize = 20 } = {}) => {
         }
       } catch (e) {
         console.error('Error parsing error response:', e);
-        errorDetails = 'Failed to parse error response';
       }
       
-      const error = new Error(`HTTP error! status: ${response.status}`);
-      error.status = response.status;
-      error.statusText = response.statusText;
-      error.details = errorDetails;
-      
-      console.error('API Error:', {
-        url,
-        status: response.status,
-        statusText: response.statusText,
-        details: errorDetails,
-        details: errorDetails,
-        error: error.message
-      });
-      
-      throw error;
-    }
-    
-    // Parse the successful response
-    let responseData;
-    const responseText = await response.text();
-    console.log('Raw response text:', responseText);
-    
-    try {
-      responseData = JSON.parse(responseText);
-      console.log('Parsed response data:', responseData);
-      console.log('API Response data type:', typeof responseData);
-      console.log('API Response data keys:', Object.keys(responseData));
-      
-      // Log the first paper (if available) for debugging
-      if (responseData.papers && responseData.papers.length > 0) {
-        console.log('First paper in response:', responseData.papers[0]);
+      // Try to get more details from the response if possible
+      let responseText;
+      if (!responseText && responseClone) {
+        try {
+          responseText = await responseClone.text();
+          console.error('[fetch] Additional error details from response:', responseText);
+        } catch (e) {
+          console.error('[fetch] Could not read response body:', e);
+        }
       }
-    } catch (e) {
-      console.error('Failed to parse JSON response. Raw response:', responseText);
-      throw new Error(`Invalid JSON response from server: ${e.message}`);
-    }
+      
+      // Create a new error with more context
+      const enhancedError = new Error(`API request failed: ${response.status} ${response.statusText}`);
+      enhancedError.originalError = new Error(response.statusText || 'Unknown error occurred');
+      if (response) {
+        enhancedError.response = {
+          status: response.status,
+          statusText: response.statusText,
+          url: response.url,
+          headers: response.headers ? Object.fromEntries(response.headers.entries()) : {},
+          body: responseText
+        };
+      }
+      
+      throw enhancedError; // Re-throw to be caught by the outer try-catch
+    } 
+    // Process the papers data from the successful response
+    const apiResponse = await response.json();
+    console.log('[fetchPapers] Raw API response:', apiResponse);
     
     // Process the papers data
-    const processedPapers = processPapersData(responseData.papers || []);
+    const processedPapers = processPapersData(apiResponse);
     
     if (processedPapers.length === 0) {
-      console.warn('No papers found in the response');
+      console.warn('[fetchPapers] No papers found after processing');
+      // Return empty results with pagination info if available
+      return {
+        papers: [],
+        pagination: {
+          currentPage: 1,
+          pageSize: 20,
+          totalPages: 1,
+          totalItems: 0,
+          hasNext: false,
+          hasPrevious: false
+        },
+        clustering: {}
+      };
     }
     
-    // Extract pagination information
-    const paginationInfo = responseData.pagination || {
+    console.log(`[fetchPapers] Successfully processed ${processedPapers.length} papers`);
+    
+    // Extract pagination info if available
+    const pagination = {
+      currentPage: apiResponse.current_page || 1,
+      pageSize: apiResponse.page_size || 20,
+      totalPages: apiResponse.total_pages || 1,
+      totalItems: apiResponse.total_count || processedPapers.length,
+      hasNext: apiResponse.next_page !== null,
+      hasPrevious: apiResponse.previous_page !== null
+    };
+    
+    // Extract pagination information from the API response
+    const paginationInfo = {
       current_page: validPage,
       page_size: validPageSize,
       total_pages: 1,
@@ -243,12 +327,12 @@ export const fetchPapers = async ({ page = 1, pageSize = 20 } = {}) => {
     
     // Extract clustering information if available
     const clusteringInfo = {
-      available: responseData.clustering?.available || false,
-      stats: responseData.clustering?.stats || {},
-      sourceFile: responseData.clustering?.source_file || null,
-      lastModified: responseData.clustering?.last_modified ? 
-        new Date(responseData.clustering.last_modified * 1000).toISOString() : null,
-      numClusters: responseData.clustering?.num_clusters || 0
+      available: apiResponse.clustering?.available || false,
+      stats: apiResponse.clustering?.stats || {},
+      sourceFile: apiResponse.clustering?.source_file || null,
+      lastModified: apiResponse.clustering?.last_modified ? 
+        new Date(apiResponse.clustering.last_modified * 1000).toISOString() : null,
+      numClusters: apiResponse.clustering?.num_clusters || 0
     };
     
     console.log('Successfully processed paginated papers and clustering data');

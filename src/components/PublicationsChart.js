@@ -70,7 +70,17 @@ const PublicationsChart = ({
       tooltip: {
         enabled: true,
         mode: 'index',
-        intersect: false
+        intersect: false,
+        callbacks: {
+          title: function(context) {
+            // Show the full date in the tooltip
+            return context[0].label;
+          },
+          label: function(context) {
+            // Show the count of publications
+            return `Publications: ${context.raw}`;
+          }
+        }
       }
     },
     elements: {
@@ -113,13 +123,33 @@ const PublicationsChart = ({
         },
         ticks: {
           autoSkip: true,
-          maxTicksLimit: 12
+          maxTicksLimit: 12,
+          maxRotation: 45,
+          minRotation: 45,
+          padding: 10,
+          callback: function(value, index, values) {
+            // Show abbreviated month and year (e.g., 'Jan 2023')
+            const label = this.getLabelForValue(value);
+            const [month, year] = label.split(' ');
+            return `${month} '${year.slice(-2)}`;
+          }
         }
       },
       y: {
         beginAtZero: true,
         ticks: {
-          precision: 0
+          precision: 0,
+          stepSize: 1,
+          callback: function(value) {
+            if (value % 1 === 0) {
+              return value;
+            }
+          }
+        },
+        title: {
+          display: true,
+          text: 'Number of Publications',
+          padding: {top: 10, bottom: 10}
         }
       }
     },

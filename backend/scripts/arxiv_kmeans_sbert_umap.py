@@ -167,8 +167,14 @@ def is_relevant(paper, must: List[str], opt: List[str]) -> bool:
     
     return is_relevant
 
-# This function saves a csv file with columns of Title, Abstract, Authors, and Cluster
+# This function saves a csv file with columns of Title, Abstract, Authors, Month, Year, and Cluster
 def save_csv(papers, labels, name, out_dir):
+    # Month names mapping
+    MONTH_NAMES = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    ]
+    
     # Remove old CSV files with the same pattern
     for old_file in os.listdir(out_dir):
         if old_file.startswith("arxiv_with_authors_") and old_file.endswith(".csv"):
@@ -182,11 +188,27 @@ def save_csv(papers, labels, name, out_dir):
     path = os.path.join(out_dir, f"arxiv_with_authors_{name}_{datetime.now():%Y%m%d_%H%M%S}.csv")
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["Title", "Abstract", "Authors", "Cluster"])
+        # Add Month and Year columns to the header
+        writer.writerow(["Title", "Abstract", "Authors", "Month", "Year", "Cluster"])
         for paper, lbl in zip(papers, labels):
             author_names = "; ".join([str(a.name) for a in paper.authors]) if paper.authors else "N/A"
-            writer.writerow([paper.title.strip(), paper.summary.strip(), author_names, lbl])
-    logging.info("CSV (with authors) saved → %s", path)
+            # Extract month and year from the published date
+            month = ""
+            year = ""
+            if hasattr(paper, 'published') and paper.published:
+                month_num = paper.published.month
+                month = MONTH_NAMES[month_num - 1] if 1 <= month_num <= 12 else str(month_num)
+                year = paper.published.year
+                
+            writer.writerow([
+                paper.title.strip(), 
+                paper.summary.strip(), 
+                author_names,
+                month,
+                year,
+                lbl
+            ])
+    logging.info("CSV with authors, month names, and year saved → %s", path)
 
 
 def main():
@@ -251,12 +273,16 @@ def main():
     logging.info(f"Log file: {log_file}")
     print(f"Logging to file: {log_file}")  # Always print log file location to console
     
+    # Maximum number of papers to fetch
+    MAX_PAPERS = 100
+    
     logging.info("Starting arXiv paper extraction")
     logging.info(f"Must include keywords: {must_kw}")
     logging.info(f"Optional keywords: {opt_kw}")
     if start_d and end_d:
         logging.info(f"Date range: {start_d} to {end_d}")
     logging.info(f"Log file: {log_file}")
+    logging.info(f"Maximum papers to fetch: {MAX_PAPERS}")
 
     client = arxiv.Client(
         page_size=100,  # Number of results per page
@@ -266,11 +292,17 @@ def main():
     papers = []
     
     for q in generate_queries(must_kw, opt_kw, start_d, end_d):
+        if len(papers) >= MAX_PAPERS:
+            logging.info(f"Reached maximum paper limit of {MAX_PAPERS}, stopping search")
+            break
+            
         try:
             logging.info("Query: %s", q)
+            # Calculate remaining papers we can fetch
+            remaining = MAX_PAPERS - len(papers)
             search = arxiv.Search(
                 query=q,
-                max_results=1000,
+                max_results=min(1000, remaining * 2),  # Fetch up to twice the remaining to account for filtering
                 sort_by=arxiv.SortCriterion.SubmittedDate,
                 sort_order=arxiv.SortOrder.Descending
             )
@@ -278,10 +310,17 @@ def main():
             # Process results in chunks to handle pagination
             batch_count = 0
             for result in client.results(search):
+                if len(papers) >= MAX_PAPERS:
+                    break
+                    
                 papers.append(result)
                 batch_count += 1
-                if batch_count % 100 == 0:
-                    logging.info(f"Fetched {batch_count} papers for query: {q}")
+                if batch_count % 10 == 0:  # Log more frequently for better progress tracking
+                    logging.info(f"Fetched {len(papers)}/{MAX_PAPERS} papers (current query: {q})")
+                    
+                if len(papers) >= MAX_PAPERS:
+                    logging.info(f"Reached maximum paper limit of {MAX_PAPERS}")
+                    break
                     
         except arxiv.HTTPError as http_err:
             logging.error(f"HTTP error for query '{q}': {http_err}")

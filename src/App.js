@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import ReactDOM from 'react-dom';
 import { fetchPapers, updateSearchTerms } from './services/api';
 import { ThemeProvider } from './context/ThemeContext';
 import { useSearch } from './context/SearchContext';
@@ -22,7 +23,9 @@ function App() {
   const [items, setItems] = useState([]);
   const [filteredItems, setFilteredItems] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [papersCache, setPapersCache] = useState({});
   const [selectedMonthIndex, setSelectedMonthIndex] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedPaper, setSelectedPaper] = useState(null);
@@ -107,69 +110,162 @@ function App() {
 
   // Update chart data when items change
   const updateChartData = useCallback((items) => {
+    console.log('=== START updateChartData ===');
+    console.log('Number of items to process:', items.length);
+    
+    // Log first 3 items for inspection
+    const sampleItems = items.slice(0, 3);
+    console.log('Sample items (first 3):', JSON.parse(JSON.stringify(sampleItems, (key, value) => {
+      // Remove large fields for better readability
+      if (key === 'abstract' || key === 'summary' || key === 'line3') return '[REDACTED]';
+      return value;
+    }, 2)));
+    
+    // Log all available keys in the first item to understand the data structure
+    if (items.length > 0) {
+      const firstItem = items[0];
+      console.log('Available keys in first item:', Object.keys(firstItem));
+      console.log('First item _original keys:', firstItem._original ? Object.keys(firstItem._original) : 'No _original');
+      
+      // Log all date-related fields from the first item
+      console.log('Date-related fields in first item:', {
+        Month: firstItem.Month,
+        Year: firstItem.Year,
+        published: firstItem.published,
+        line2: firstItem.line2,
+        _original_Month: firstItem._original?.Month,
+        _original_Year: firstItem._original?.Year,
+        _original_published: firstItem._original?.published,
+        _original_date: firstItem._original?.date,
+        _original_created: firstItem._original?.created,
+        _original_updated: firstItem._original?.updated
+      });
+    }
+    
+    // Log all unique Month/Year combinations found
+    const monthYearCounts = {};
+    items.forEach(item => {
+      const monthYear = `${item.Month || 'No Month'}-${item.Year || 'No Year'}`;
+      monthYearCounts[monthYear] = (monthYearCounts[monthYear] || 0) + 1;
+    });
+    console.log('Month/Year combinations found:', monthYearCounts);
+    
     try {
-      const currentDate = new Date();
-      const currentYear = currentDate.getFullYear();
       const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
                         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       
-      const labels = [];
-      const papersCount = [];
+      // Group papers by year and month
+      const papersByDate = {};
       
-      // Create data for the last 3 years
-      for (let year = currentYear - 2; year <= currentYear; year++) {
-        for (let month = 0; month < 12; month++) {
-          if (year === currentYear && month > currentDate.getMonth()) break;
+      items.forEach(item => {
+        try {
+          if (!item) return;
           
-          const monthLabel = `${monthNames[month]} ${year}`;
-          labels.push(monthLabel);
+          // Try to get month and year from the paper data
+          let paperMonth, paperYear;
           
-          // Count papers for this month
-          const count = items.filter(item => {
-            try {
-              if (!item) return false;
-              
-              // Try to get date from different possible fields
-              let dateStr = '';
-              if (item._original && item._original.published) {
-                dateStr = item._original.published;
-              } else if (item._original && item._original.updated) {
-                dateStr = item._original.updated;
-              } else if (item._original && item._original.submitted_date) {
-                dateStr = item._original.submitted_date;
-              } else if (item.line2) {
-                // Fall back to line2 format: "Published: YYYY-MM-DD"
-                dateStr = item.line2.replace('Published:', '').trim();
-              } else {
-                return false; // No date information available
+          // Debug log the item structure
+          console.log('Processing item for dates:', {
+            id: item.id,
+            hasMonth: !!item.Month,
+            hasYear: !!item.Year,
+            published: item.published,
+            hasOriginal: !!item._original,
+            originalPublished: item._original?.published,
+            originalMonth: item._original?.Month,
+            originalYear: item._original?.Year
+          });
+
+          // Try all possible ways to extract month and year
+          const dateExtractors = [
+            // 1. Direct Month/Year fields (from backend)
+            () => {
+              if (!item.Month || !item.Year) return null;
+              const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                                'July', 'August', 'September', 'October', 'November', 'December'];
+              const monthIndex = monthNames.findIndex(m => 
+                m.toLowerCase() === item.Month.toLowerCase()
+              );
+              const year = parseInt(item.Year, 10);
+              if (monthIndex !== -1 && !isNaN(year)) {
+                const key = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
+                papersByDate[key] = (papersByDate[key] || 0) + 1;
+                return { month: monthIndex, year };
               }
-              
-              // Parse the date
-              const paperDate = new Date(dateStr);
-              if (isNaN(paperDate.getTime())) return false;
-              
-              return paperDate.getFullYear() === year && 
-                    paperDate.getMonth() === month;
-                    
-            } catch (error) {
-              console.warn('Error processing paper date:', {
-                error: error.message,
-                item: item
-              });
-              return false;
+              return null;
+            },
+            
+            // 2. From _original.Month/Year
+            () => {
+              if (!item._original?.Month || !item._original?.Year) return null;
+              const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                                'July', 'August', 'September', 'October', 'November', 'December'];
+              const monthIndex = monthNames.findIndex(m => 
+                m.toLowerCase() === item._original.Month.toLowerCase()
+              );
+              const year = parseInt(item._original.Year, 10);
+              if (!isNaN(year) && monthIndex !== -1) {
+                const key = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
+                papersByDate[key] = (papersByDate[key] || 0) + 1;
+                return { month: monthIndex, year };
+              }
+              return null;
+            },
+            
+            // 3. From published date string
+            () => {
+              if (!item.published) return null;
+              try {
+                const date = new Date(item.published);
+                if (isNaN(date.getTime())) return null;
+                const year = date.getFullYear();
+                const month = date.getMonth();
+                const key = `${year}-${String(month + 1).padStart(2, '0')}`;
+                papersByDate[key] = (papersByDate[key] || 0) + 1;
+                return { month, year };
+              } catch (e) {
+                return null;
+              }
             }
-          }).length;
+          ];
           
-          papersCount.push(count);
+          // Try each extraction method until we find a valid date
+          for (const extractor of dateExtractors) {
+            const result = extractor();
+            if (result) break;
+          }
+        } catch (error) {
+          console.error('Error processing paper item:', { item, error });
         }
-      }
+      });
+        
+        // Generate labels and data for the chart
+        const labels = [];
+        const papersCount = [];
+        const currentDate = new Date();
+        currentDate.setMonth(0); // Start from January
+        
+        // Generate data for the last 12 months
+        for (let i = 0; i < 12; i++) {
+          const year = currentDate.getFullYear();
+          const month = currentDate.getMonth();
+          const key = `${year}-${String(month + 1).padStart(2, '0')}`;
+          
+          // Add to labels and data
+          labels.push(`${monthNames[month]} ${year}`);
+          papersCount.push(papersByDate[key] || 0);
+          
+          // Move to next month
+          currentDate.setMonth(currentDate.getMonth() + 1);
+        }
       
       // Ensure we have valid data to display
       if (papersCount.length === 0 || labels.length === 0) {
         console.warn('No valid date data found for chart, using default values');
         // Generate some default data to prevent chart errors
-        const defaultLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-          .map(month => `${month} ${currentYear}`);
+        const currentDate = new Date();
+        const currentYear = currentDate.getFullYear();
+        const defaultLabels = monthNames.map(month => `${month} ${currentYear}`);
         
         setChartData({
           labels: defaultLabels,
@@ -223,62 +319,51 @@ function App() {
     }
   }, []);
 
-  // Function to load papers data with pagination
-  const loadPapers = useCallback(async (page = 1, pageSize = 20) => {
+  // Load papers data with caching and state management
+  const loadPapers = useCallback(async (page = 1, pageSize = 20, forceRefresh = false) => {
+    const cacheKey = `page_${page}_size_${pageSize}`;
+    console.log(`[loadPapers] Loading papers - Page: ${page}, PageSize: ${pageSize}, ForceRefresh: ${forceRefresh}`);
+    
+    // If we have cached data and not forcing refresh, use it
+    if (papersCache[cacheKey] && !forceRefresh) {
+      const { papers, pagination } = papersCache[cacheKey];
+      console.log(`[loadPapers] Using cached data for key: ${cacheKey}, Papers count: ${papers.length}`);
+      
+      // Batch state updates to minimize re-renders
+      ReactDOM.unstable_batchedUpdates(() => {
+        setItems(papers);
+        setFilteredItems(papers);
+        setPagination(pagination);
+        updateChartData(papers);
+      });
+      
+      return;
+    }
+    
+    console.log('[loadPapers] Fetching fresh data from API...');
+    setIsLoading(true);
+    
     try {
-      console.log(`Starting to load papers (page ${page}, ${pageSize} items per page)...`);
-      setIsLoading(true);
+      const data = await fetchPapers({ page, pageSize });
+      console.log('[loadPapers] Fetched data from API:', {
+        papersCount: data.papers?.length || 0,
+        pagination: data.pagination
+      });
       
-      // Clear previous data if it's the first page
-      if (page === 1) {
-        setItems([]);
-        setFilteredItems([]);
+      if (!data.papers || !Array.isArray(data.papers)) {
+        throw new Error('Invalid papers data received from API');
       }
       
-      // Fetch paginated papers and clustering data from the API
-      console.log(`Fetching page ${page} with ${pageSize} items...`);
-      const response = await fetchPapers({ page, pageSize });
+      // Process papers data
+      const validItems = [];
+      const allCategories = new Set();
       
-      // Check if we have a valid response with papers
-      if (!response || !response.papers || !Array.isArray(response.papers)) {
-        throw new Error('Invalid data format received from API');
-      }
-      
-      // Update pagination state
-      if (response.pagination) {
-        setPagination({
-          currentPage: response.pagination.currentPage,
-          pageSize: response.pagination.pageSize,
-          totalPages: response.pagination.totalPages,
-          totalItems: response.pagination.totalItems,
-          hasNext: response.pagination.hasNext,
-          hasPrevious: response.pagination.hasPrevious
-        });
-      }
-      
-      // Log clustering information if available
-      if (response.clustering) {
-        console.log('Clustering information:', {
-          available: response.clustering.available,
-          sourceFile: response.clustering.sourceFile,
-          numClusters: response.clustering.numClusters
-        });
-      }
-      
-      console.log(`Received ${response.papers.length} papers from API (page ${page} of ${response.pagination?.totalPages || 1})`);
-      
-      // Process the papers data
-      const dataToProcess = response.papers;
-      
-      // Transform data to match the expected format for the UI
-      const formattedItems = dataToProcess.map(paper => {
+      // Process each paper in the response
+      for (const paper of data.papers) {
         try {
-          // Log a sample of the paper data for debugging
-          if (Math.random() < 0.1) { // Log about 10% of papers
-            console.log('Processing paper:', paper);
-          }
+          if (!paper) continue;
           
-          // Extract categories from categories field
+          // Process categories
           let categories = [];
           if (paper.categories) {
             // Try different separators
@@ -295,7 +380,6 @@ function App() {
             
             // If we still have a single long category, try splitting by dots or other common patterns
             if (categoryParts.length === 1 && categoryParts[0].length > 20) {
-              // Try splitting by dots or other common patterns
               const complexSplits = categoryParts[0].split(/[.\s-]/).filter(Boolean);
               if (complexSplits.length > 1) {
                 categoryParts = complexSplits;
@@ -312,61 +396,39 @@ function App() {
             categories = ['Uncategorized'];
           }
           
+          // Update all categories set
+          categories.forEach(cat => allCategories.add(cat));
+          
           // Format the paper data for the UI
           const formattedPaper = {
             id: paper.id || `paper-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
             title: paper.title || 'Untitled',
             line1: paper.authors || 'Unknown Author',
             line2: `Published: ${paper.published || 'Date not available'}`,
-            // Ensure abstract is properly passed through
             abstract: paper.abstract || paper.Abstract || paper.summary || 'No abstract available',
             line3: paper.abstract || paper.Abstract || paper.summary || 'No abstract available',
             line4: paper.url || paper.URL || '#',
             categories: categories,
-            technologies: categories, // Using categories as technologies for now
+            technologies: categories,
             Cluster: paper.cluster_label || paper.Cluster || paper.cluster || 'Uncategorized',
-            // Include any additional fields that might be useful
             ...(paper.x !== undefined && { x: paper.x }),
             ...(paper.y !== undefined && { y: paper.y }),
-            // Add original paper data for debugging
-            _original: paper
+            _original: paper,
+            Month: paper.Month || (paper.published ? new Date(paper.published).toLocaleString('default', { month: 'long' }) : null),
+            Year: paper.Year || (paper.published ? new Date(paper.published).getFullYear() : null)
           };
           
-          // Log the formatted paper for debugging
-          if (Math.random() < 0.1) { // Log about 10% of formatted papers
-            console.log('Formatted paper:', formattedPaper);
-          }
-          
-          return formattedPaper;
-          
+          validItems.push(formattedPaper);
         } catch (error) {
           console.error('Error formatting paper:', {
             error: error.message,
             paper: paper,
             stack: error.stack
           });
-          
-          // Return a minimal valid paper object
-          return {
-            id: `error-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-            title: 'Error loading paper',
-            line1: 'Unknown',
-            line2: 'Date: N/A',
-            line3: 'There was an error loading this paper',
-            line4: '#',
-            categories: ['error'],
-            technologies: ['error'],
-            Cluster: 'Error',
-            _error: error.message,
-            _original: paper || {}
-          };
         }
-      });
+      }
       
-      console.log(`Successfully formatted ${formattedItems.length} papers`);
-      
-      // Filter out any null/undefined papers that might have been created during errors
-      const validItems = formattedItems.filter(item => item != null);
+      console.log(`Successfully processed ${validItems.length} papers`);
       
       // Update state with the new data (append if loading more pages)
       if (page > 1) {
@@ -375,12 +437,16 @@ function App() {
         setItems(validItems);
       }
       
-      // Always update filtered items with the current page's data
+      // Update filtered items with the current page's data
       setFilteredItems(validItems);
       
       // Update chart data with all available items (only on first page load)
       if (page === 1) {
-        updateChartData(validItems);
+        try {
+          updateChartData(validItems);
+        } catch (chartError) {
+          console.error('Error updating chart data:', chartError);
+        }
       }
       
       console.log(`Page ${page} loaded successfully with ${validItems.length} items`);
@@ -402,7 +468,8 @@ function App() {
         categories: ['error'],
         technologies: ['error'],
         Cluster: 'Error',
-        _error: error.message
+        _error: error.message,
+        _original: {}
       };
       
       setItems([errorItem]);
@@ -677,26 +744,31 @@ function App() {
                   onSearch={handleSearch} 
                   initialQuery={currentSearch?.query || ''}
                   initialKeywords={currentSearch?.keywords || ''}
+                  selectedMonthIndex={selectedMonthIndex}
                 />
               </div>
             )}
+            
             {activeTab === 'papers' ? (
-              <>
-                {/* Charts Section */}
+              <div className="space-y-6">
+                {/* Charts Grid */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Publications Over Time Chart */}
                   <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                     <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
                       Publications Over Time
                     </h2>
                     <div className="h-80">
                       <PublicationsChart 
-                        data={chartData} 
+                        data={chartData}
                         onMonthSelect={handleMonthSelect}
                         selectedMonthIndex={selectedMonthIndex}
+                        onClearSelection={clearMonthFilter}
                       />
                     </div>
                   </div>
                   
+                  {/* Paper Clusters Chart */}
                   <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                     <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
                       Paper Clusters
@@ -711,7 +783,7 @@ function App() {
                     </div>
                   </div>
                 </div>
-
+                
                 {/* Papers List */}
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
                   <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
@@ -731,41 +803,34 @@ function App() {
                     )}
                   </div>
                   
-                  {isLoading && pagination.currentPage === 1 ? (
-                    <div className="p-6 text-center">
-                      <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-500 border-t-transparent"></div>
-                      <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">Loading papers...</p>
-                    </div>
-                  ) : items.length > 0 ? (
-                    <>
-                      <ListSection 
-                        items={items}
-                        onItemClick={handlePaperSelect}
-                        selectedItemId={selectedPaper?.id}
-                        onCategorySelect={handleCategorySelect}
-                      />
-                      
-                      {/* Pagination Controls */}
-                      <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
-                        <Pagination
-                          currentPage={pagination.currentPage}
-                          totalPages={pagination.totalPages}
-                          onPageChange={handlePageChange}
-                          pageSize={pagination.pageSize}
-                          onPageSizeChange={handlePageSizeChange}
-                          totalItems={pagination.totalItems}
-                          hasNext={pagination.hasNext}
-                          hasPrevious={pagination.hasPrevious}
-                        />
-                      </div>
-                    </>
-                  ) : (
+                  <ListSection 
+                    items={items}
+                    isLoading={isLoading && pagination.currentPage === 1}
+                    onItemClick={handlePaperSelect}
+                    selectedItemId={selectedPaper?.id}
+                    onCategorySelect={handleCategorySelect}
+                  />
+                  
+                  {items.length === 0 && !isLoading ? (
                     <div className="p-6 text-center">
                       <p className="text-gray-500 dark:text-gray-400">No papers found. Try a different search term.</p>
                     </div>
+                  ) : (
+                    <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+                      <Pagination
+                        currentPage={pagination.currentPage}
+                        totalPages={pagination.totalPages}
+                        onPageChange={handlePageChange}
+                        pageSize={pagination.pageSize}
+                        onPageSizeChange={handlePageSizeChange}
+                        totalItems={pagination.totalItems}
+                        hasNext={pagination.hasNext}
+                        hasPrevious={pagination.hasPrevious}
+                      />
+                    </div>
                   )}
                 </div>
-              </>
+              </div>
             ) : (
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
@@ -778,17 +843,9 @@ function App() {
                 />
               </div>
             )}
-            
-            {/* Loading indicator for subsequent pages */}
-            {isLoading && pagination.currentPage > 1 && (
-              <div className="fixed bottom-4 right-4 bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg flex items-center space-x-2 z-50">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-500"></div>
-                <span className="text-sm text-gray-600 dark:text-gray-300">Loading more papers...</span>
-              </div>
-            )}
           </div>
         </main>
-        </div>
+      </div>
     </ThemeProvider>
   );
 }

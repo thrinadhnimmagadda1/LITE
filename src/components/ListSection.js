@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Skeleton, SkeletonCard } from './Skeleton';
 
-const ListSection = ({ items = [], onCategorySelect, onItemClick }) => {
+const ListSection = ({ items = [], isLoading = false, onCategorySelect, onItemClick }) => {
   const navigate = useNavigate();
   const [expandedId, setExpandedId] = useState(null);
 
@@ -224,6 +225,16 @@ const ListSection = ({ items = [], onCategorySelect, onItemClick }) => {
     });
   }
   
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <SkeletonCard key={`skeleton-${index}`} />
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {validItems.length > 0 ? (
