@@ -1,8 +1,8 @@
 {
     "must_include": [
-        "llm"
+        "ai"
     ],
     "optional_keywords": [
-        "ai"
+        "llm"
     ]
 }

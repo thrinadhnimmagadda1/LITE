@@ -37,7 +37,7 @@ function App() {
   // Pagination state
   const [pagination, setPagination] = useState({
     currentPage: 1,
-    pageSize: 20,
+    pageSize: 100,  // Increased from 20 to 100 to show all papers
     totalPages: 1,
     totalItems: 0,
     hasNext: false,
