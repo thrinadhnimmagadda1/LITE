@@ -15,38 +15,34 @@ const SearchForm = ({ onSearch, initialQuery = '', initialKeywords = '', compact
   };
 
   return (
-    <div className={`w-full ${compact ? '' : 'max-w-2xl mx-auto'}`}>
-      <form onSubmit={handleSubmit} className={`${compact ? 'flex gap-2 items-end' : 'space-y-4'}`}>
-        <div className={`${compact ? 'flex-1' : 'space-y-2'}`}>
-          {!compact && (
-            <label htmlFor="search" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Search terms (required)
-            </label>
-          )}
+    <div className={`w-full ${compact ? '' : 'max-w-4xl mx-auto'}`}>
+      <form onSubmit={handleSubmit} className={`${compact ? 'flex flex-wrap gap-3 items-end' : 'space-y-4'}`}>
+        <div className={`${compact ? 'flex-1 min-w-[200px]' : 'w-full space-y-2'}`}>
+          <label htmlFor="search" className={`block text-sm font-medium text-gray-700 dark:text-gray-300 ${compact ? 'mb-1' : ''}`}>
+            {compact ? 'Search' : 'Search terms (required)'}
+          </label>
           <input
             id="search"
             name="search"
             type="text"
             required
-            className={`appearance-none rounded-lg relative block w-full px-5 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 text-base ${compact ? 'py-2' : ''}`}
-            placeholder={compact ? 'Search papers...' : 'e.g., machine learning, AI, deep learning'}
+            className="appearance-none rounded-lg relative block w-full px-4 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 text-base"
+            placeholder="Enter search terms..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
         
-        <div className={`${compact ? 'flex-1' : 'space-y-2'}`}>
-          {!compact && (
-            <label htmlFor="optional-keywords" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Optional keywords (comma-separated)
-            </label>
-          )}
+        <div className={`${compact ? 'flex-1 min-w-[200px]' : 'w-full space-y-2'}`}>
+          <label htmlFor="optional-keywords" className={`block text-sm font-medium text-gray-700 dark:text-gray-300 ${compact ? 'mb-1' : ''}`}>
+            {compact ? 'Filters' : 'Optional keywords (comma-separated)'}
+          </label>
           <input
             id="optional-keywords"
             name="optional-keywords"
             type="text"
-            className={`appearance-none rounded-lg relative block w-full px-5 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 text-base ${compact ? 'py-2' : ''}`}
-            placeholder={compact ? 'Optional keywords...' : 'e.g., transformer, attention, BERT (optional)'}
+            className="appearance-none rounded-lg relative block w-full px-4 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 text-base"
+            placeholder="Enter optional keywords..."
             value={optionalKeywords}
             onChange={(e) => setOptionalKeywords(e.target.value)}
           />

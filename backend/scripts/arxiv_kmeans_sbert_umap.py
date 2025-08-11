@@ -274,7 +274,7 @@ def main():
     print(f"Logging to file: {log_file}")  # Always print log file location to console
     
     # Maximum number of papers to fetch
-    MAX_PAPERS = 100
+    MAX_PAPERS = 1000
     
     logging.info("Starting arXiv paper extraction")
     logging.info(f"Must include keywords: {must_kw}")

@@ -29,6 +29,7 @@ function App() {
   const [selectedMonthIndex, setSelectedMonthIndex] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedPaper, setSelectedPaper] = useState(null);
+  const [optionalKeywords, setOptionalKeywords] = useState('');
   const [chartData, setChartData] = useState({
     labels: [],
     datasets: []
@@ -512,6 +513,7 @@ function App() {
     } else if (searchParams && typeof searchParams === 'object') {
       query = searchParams.query?.trim() || '';
       keywords = searchParams.keywords?.trim() || '';
+      setOptionalKeywords(keywords); // Update the optional keywords state
       if (!query) return;
     } else {
       console.error('Invalid search parameters:', searchParams);
@@ -789,7 +791,9 @@ function App() {
                   <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
                     <div>
                       <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                        {searchTerm ? `Search Results for "${searchTerm}"` : 'Latest Publications'}
+                        {searchTerm 
+                          ? `Search Results for "${searchTerm}${optionalKeywords ? ` ,${optionalKeywords}` : ''}"` 
+                          : 'Latest Publications'}
                       </h2>
                       <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                         Showing {items.length} of {pagination.totalItems} {pagination.totalItems === 1 ? 'result' : 'results'}
