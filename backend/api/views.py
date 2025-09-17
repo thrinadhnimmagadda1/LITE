@@ -124,6 +124,106 @@ class PapersAPIView(APIView):
         return [{'category': k, 'count': v} 
                for k, v in sorted(categories.items(), key=lambda x: -x[1])[:10]]
     
+    def get_total_available_papers(self):
+        """Get the total number of papers available from ArXiv extraction logs."""
+        try:
+            import os
+            import glob
+            from pathlib import Path
+            
+            # Look for log files in the scripts/logs directory
+            logs_dir = Path(settings.BASE_DIR) / 'scripts' / 'logs'
+            print(f"Looking for logs in: {logs_dir}")
+            print(f"Logs dir exists: {logs_dir.exists()}")
+            
+            if not logs_dir.exists():
+                print(f"Logs directory does not exist: {logs_dir}")
+                return None
+            
+            # Find the most recent log file
+            log_files = glob.glob(str(logs_dir / 'arxiv_extractor_*.log'))
+            print(f"Found log files: {log_files}")
+            
+            if not log_files:
+                print("No log files found")
+                return None
+            
+            # Sort by modification time and get the most recent
+            latest_log = max(log_files, key=os.path.getmtime)
+            print(f"Latest log file: {latest_log}")
+            
+            total_available = 0
+            with open(latest_log, 'r') as f:
+                for line in f:
+                    if 'Got first page:' in line and 'total results' in line:
+                        print(f"Found line: {line.strip()}")
+                        # Extract the total number from lines like:
+                        # "Got first page: 100 of 12847 total results"
+                        try:
+                            parts = line.split('of')
+                            if len(parts) == 2:
+                                total_part = parts[1].strip().split()[0]
+                                total_available += int(total_part)
+                                print(f"Added {total_part} to total, now: {total_available}")
+                        except (ValueError, IndexError) as e:
+                            print(f"Error parsing line: {e}")
+                            continue
+            
+            print(f"Final total available: {total_available}")
+            return total_available if total_available > 0 else None
+            
+        except Exception as e:
+            print(f"Error reading total available papers from logs: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    def get_all_papers_for_clustering(self):
+        """Get all papers without pagination for clustering visualization."""
+        try:
+            # Get all papers without pagination
+            queryset = Paper.objects.all()
+            
+            # Apply search filters if provided
+            search_query = self.request.query_params.get('search', '').strip()
+            if search_query:
+                queryset = queryset.filter(
+                    Q(title__icontains=search_query) |
+                    Q(abstract__icontains=search_query) |
+                    Q(authors__icontains=search_query)
+                )
+            
+            # Filter by cluster if specified
+            cluster = self.request.query_params.get('cluster')
+            if cluster is not None:
+                try:
+                    cluster_id = int(cluster)
+                    queryset = queryset.filter(cluster=cluster_id)
+                except (ValueError, TypeError):
+                    pass
+            
+            # Filter by year if specified
+            year = self.request.query_params.get('year')
+            if year is not None:
+                try:
+                    year_int = int(year)
+                    queryset = queryset.filter(year=year_int)
+                except (ValueError, TypeError):
+                    pass
+            
+            # Filter by month if specified
+            month = self.request.query_params.get('month')
+            if month is not None:
+                queryset = queryset.filter(month__iexact=month)
+            
+            # Return all papers (not paginated)
+            papers = [self.get_serialized_paper(paper) for paper in queryset]
+            return papers
+            
+        except Exception as e:
+            print(f"Error getting all papers for clustering: {e}")
+            return []
+    
     def get_serialized_paper(self, paper):
         """Convert a Paper model instance to a serializable dict."""
         return {
@@ -166,6 +266,18 @@ class PapersAPIView(APIView):
             month: Optional month to filter by
         """
         try:
+            # Check if this is a request for all papers (clustering)
+            is_clustering_request = 'all-for-clustering' in request.path
+            
+            if is_clustering_request:
+                # Return all papers without pagination for clustering
+                all_papers = self.get_all_papers_for_clustering()
+                return Response({
+                    'papers': all_papers,
+                    'total_count': len(all_papers),
+                    'is_clustering_data': True
+                })
+            
             # Get base queryset with filters applied
             queryset = self.get_queryset()
             
@@ -184,6 +296,9 @@ class PapersAPIView(APIView):
                 timeline_data = self.get_publication_timeline(queryset)
                 category_data = self.get_category_distribution(queryset)
                 
+                # Get total available papers from ArXiv extraction logs
+                total_available = self.get_total_available_papers()
+                
                 # Build response data
                 response_data = {
                     'papers': papers,
@@ -191,6 +306,7 @@ class PapersAPIView(APIView):
                         'available': True,
                         'stats': {
                             'total_papers': queryset.count(),
+                            'total_available_from_arxiv': total_available,
                             'num_clusters': len(set(queryset.exclude(cluster__isnull=True)
                                                  .values_list('cluster', flat=True))),
                             'papers_per_cluster': cluster_stats
@@ -208,6 +324,10 @@ class PapersAPIView(APIView):
             
             # If pagination is not used (shouldn't happen with our settings)
             papers = [self.get_serialized_paper(paper) for paper in queryset]
+            
+            # Get total available papers from ArXiv extraction logs
+            total_available = self.get_total_available_papers()
+            
             return Response({
                 'pagination': {
                     'current_page': 1,
@@ -221,7 +341,9 @@ class PapersAPIView(APIView):
                     'papers': papers,
                     'clustering': {
                         'available': True,
-                        'stats': {},
+                        'stats': {
+                            'total_available_from_arxiv': total_available
+                        },
                         'source_file': 'database',
                         'last_modified': Paper.objects.latest('updated_at').updated_at.timestamp()
                     },
@@ -246,12 +368,18 @@ class StandardResultsSetPagination(PageNumberPagination):
     max_page_size = 1000
 
     def get_paginated_response(self, data):
+        # Get total available papers from ArXiv extraction logs if available
+        total_available = None
+        if hasattr(data, 'get') and data.get('clustering', {}).get('stats', {}).get('total_available_from_arxiv'):
+            total_available = data['clustering']['stats']['total_available_from_arxiv']
+        
         return Response({
             'pagination': {
                 'current_page': self.page.number,
                 'page_size': self.page.paginator.per_page,
                 'total_pages': self.page.paginator.num_pages,
                 'total_items': self.page.paginator.count,
+                'total_available_from_arxiv': total_available,
                 'has_next': self.page.has_next(),
                 'has_previous': self.page.has_previous(),
             },
@@ -641,6 +769,60 @@ class PapersAPIView(APIView):
                 
         return papers, None
     
+    def get_total_available_papers(self):
+        """Get the total number of papers available from ArXiv extraction logs."""
+        try:
+            import os
+            import glob
+            from pathlib import Path
+            
+            # Look for log files in the scripts/logs directory
+            logs_dir = Path(settings.BASE_DIR) / 'scripts' / 'logs'
+            print(f"Looking for logs in: {logs_dir}")
+            print(f"Logs dir exists: {logs_dir.exists()}")
+            
+            if not logs_dir.exists():
+                print(f"Logs directory does not exist: {logs_dir}")
+                return None
+            
+            # Find the most recent log file
+            log_files = glob.glob(str(logs_dir / 'arxiv_extractor_*.log'))
+            print(f"Found log files: {log_files}")
+            
+            if not log_files:
+                print("No log files found")
+                return None
+            
+            # Sort by modification time and get the most recent
+            latest_log = max(log_files, key=os.path.getmtime)
+            print(f"Latest log file: {latest_log}")
+            
+            total_available = 0
+            with open(latest_log, 'r') as f:
+                for line in f:
+                    if 'Got first page:' in line and 'total results' in line:
+                        print(f"Found line: {line.strip()}")
+                        # Extract the total number from lines like:
+                        # "Got first page: 100 of 381 total results"
+                        try:
+                            parts = line.split('of')
+                            if len(parts) == 2:
+                                total_part = parts[1].strip().split()[0]
+                                total_available = int(total_part)  # Use the latest total found
+                                print(f"Found total: {total_part}")
+                        except (ValueError, IndexError) as e:
+                            print(f"Error parsing line: {e}")
+                            continue
+            
+            print(f"Final total available: {total_available}")
+            return total_available if total_available > 0 else None
+            
+        except Exception as e:
+            print(f"Error reading total available papers from logs: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
     def clean_data(self, data):
         """
         Recursively clean data to handle NaN, Inf, and other non-serializable values.
@@ -666,8 +848,17 @@ class PapersAPIView(APIView):
         Query Parameters:
             page: Page number (default: 1)
             page_size: Number of items per page (default: 20, max: 100)
+            get_latest_log_info: If true, return latest log info instead of papers
         """
         try:
+            # Check if this is a request for latest log info
+            if request.query_params.get('get_latest_log_info') == 'true':
+                latest_log_total = self.get_total_available_papers()
+                return Response({
+                    'latest_log_total': latest_log_total,
+                    'message': 'Latest log info retrieved successfully'
+                })
+            
             # Get pagination parameters
             page = int(request.query_params.get('page', 1))
             page_size = min(int(request.query_params.get('page_size', 20)), 100)  # Cap at 100 items per page
@@ -715,6 +906,9 @@ class PapersAPIView(APIView):
             # Get paginated papers
             paginated_papers = papers[start_idx:end_idx]
             
+            # Get total available papers from ArXiv logs
+            total_available_from_arxiv = self.get_total_available_papers()
+            
             # Prepare response data
             response_data = {
                 'pagination': {
@@ -723,7 +917,8 @@ class PapersAPIView(APIView):
                     'total_pages': total_pages,
                     'total_items': total_papers,
                     'has_next': page < total_pages,
-                    'has_previous': page > 1
+                    'has_previous': page > 1,
+                    'total_available_from_arxiv': total_available_from_arxiv
                 },
                 'papers': paginated_papers,
                 'clustering': {

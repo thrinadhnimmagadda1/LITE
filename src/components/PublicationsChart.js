@@ -11,6 +11,7 @@ import {
   Legend,
   Filler
 } from 'chart.js';
+import { useLogs } from '../context/LogsContext';
 
 // Register ChartJS components
 ChartJS.register(
@@ -31,6 +32,13 @@ const PublicationsChart = ({
   onClearSelection 
 }) => {
   const chartRef = useRef(null);
+  const { addLog } = useLogs();
+  
+  // Month labels for logging
+  const monthLabels = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
 
   const handleClick = useCallback((event) => {
     if (!chartRef.current) return;
@@ -47,13 +55,24 @@ const PublicationsChart = ({
       const clickedIndex = points[0].index;
       // Only call onMonthSelect if clicking a different month
       if (clickedIndex !== selectedMonthIndex) {
+        const monthName = monthLabels[clickedIndex];
+        addLog({
+          type: 'info',
+          message: `Month selected on chart: ${monthName}`,
+          details: { monthIndex: clickedIndex, monthName, publications: data[clickedIndex] }
+        });
         onMonthSelect(clickedIndex);
       }
     } else if (selectedMonthIndex !== null) {
       // Only clear if we have a selection
+      addLog({
+        type: 'info',
+        message: 'Month selection cleared on chart',
+        details: { previousMonth: monthLabels[selectedMonthIndex] }
+      });
       onClearSelection();
     }
-  }, [onMonthSelect, onClearSelection, selectedMonthIndex]);
+  }, [onMonthSelect, onClearSelection, selectedMonthIndex, monthLabels, data, addLog]);
 
   const options = {
     responsive: true,

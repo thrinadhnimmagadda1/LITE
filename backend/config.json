@@ -1,8 +1,8 @@
 {
     "must_include": [
-        "ai"
+        "deep learning"
     ],
     "optional_keywords": [
-        "llm"
+        "time series"
     ]
 }

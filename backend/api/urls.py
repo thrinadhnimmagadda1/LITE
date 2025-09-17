@@ -35,6 +35,9 @@ urlpatterns = [
     path('papers/', 
          cache_page(CACHE_TTL)(views.PapersAPIView.as_view()), 
          name='papers'),
+    path('papers/all-for-clustering/', 
+         cache_page(CACHE_TTL)(views.PapersAPIView.as_view()), 
+         name='papers-all-clustering'),
     
     # Redirect URLs without trailing slashes to URLs with trailing slashes
     path('search-terms', 

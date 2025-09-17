@@ -53,8 +53,11 @@ const ClustersChart = () => {
     const fetchClusterData = async () => {
       try {
         setLoading(true);
-        const response = await axios.get(API_ENDPOINTS.PAPERS);
+        // Get all papers by using a large page size
+        const response = await axios.get(`${API_ENDPOINTS.PAPERS}?page_size=1000`);
         const papers = response.data.papers || [];
+        
+        console.log(`Fetched ${papers.length} papers for clustering visualization`);
         
         // Count papers per cluster
         const clusterCounts = {};

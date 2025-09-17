@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { fetchPapers, updateSearchTerms } from './services/api';
+import { API_ENDPOINTS } from './config';
 import { ThemeProvider } from './context/ThemeContext';
 import { useSearch } from './context/SearchContext';
 import SearchForm from './components/SearchForm';
@@ -11,13 +12,21 @@ import SearchPage from './components/SearchPage';
 import Header from './components/Header';
 import Pagination from './components/Pagination';
 import './App.css';
+import { useLogs } from './context/LogsContext';
+import LiveLogs from './components/LiveLogs';
+import { LogsProvider } from './context/LogsContext';
+import LiveSearchLogs from './components/LiveSearchLogs';
 
 function App() {
   // State management
   const [searchTerm, setSearchTerm] = useState('');
+  const [headerSearchQuery, setHeaderSearchQuery] = useState('');
+  const [headerOptionalKeywords, setHeaderOptionalKeywords] = useState('');
+  const [showHeaderKeywords, setShowHeaderKeywords] = useState(false);
   
   // Get search context
-  const { currentSearch, setCurrentSearch } = useSearch();
+  const { currentSearch, setCurrentSearch, addToHistory } = useSearch();
+  const { addLog } = useLogs();
   const [hasSearched, setHasSearched] = useState(false);
   const [activeTab, setActiveTab] = useState('papers');
   const [items, setItems] = useState([]);
@@ -44,6 +53,9 @@ function App() {
     hasNext: false,
     hasPrevious: false
   });
+
+  // Total available papers from ArXiv
+  const [totalAvailableFromArxiv, setTotalAvailableFromArxiv] = useState(0); // Will be updated dynamically
 
   // Handler for when a month is selected in the publications chart
   const handleMonthSelect = useCallback((monthIndex) => {
@@ -325,10 +337,22 @@ function App() {
     const cacheKey = `page_${page}_size_${pageSize}`;
     console.log(`[loadPapers] Loading papers - Page: ${page}, PageSize: ${pageSize}, ForceRefresh: ${forceRefresh}`);
     
+    addLog({
+      type: 'info',
+      message: `Loading papers - Page ${page}, Size ${pageSize}`,
+      details: { page, pageSize, forceRefresh }
+    });
+    
     // If we have cached data and not forcing refresh, use it
     if (papersCache[cacheKey] && !forceRefresh) {
       const { papers, pagination } = papersCache[cacheKey];
       console.log(`[loadPapers] Using cached data for key: ${cacheKey}, Papers count: ${papers.length}`);
+      
+      addLog({
+        type: 'success',
+        message: `Using cached data - ${papers.length} papers loaded`,
+        details: { cacheKey, papersCount: papers.length }
+      });
       
       // Batch state updates to minimize re-renders
       ReactDOM.unstable_batchedUpdates(() => {
@@ -342,6 +366,12 @@ function App() {
     }
     
     console.log('[loadPapers] Fetching fresh data from API...');
+    addLog({
+      type: 'info',
+      message: 'Fetching fresh data from API...',
+      details: { page, pageSize }
+    });
+    
     setIsLoading(true);
     
     try {
@@ -349,6 +379,12 @@ function App() {
       console.log('[loadPapers] Fetched data from API:', {
         papersCount: data.papers?.length || 0,
         pagination: data.pagination
+      });
+      
+      addLog({
+        type: 'success',
+        message: `API response received - ${data.papers?.length || 0} papers`,
+        details: { papersCount: data.papers?.length || 0, pagination: data.pagination }
       });
       
       if (!data.papers || !Array.isArray(data.papers)) {
@@ -441,10 +477,29 @@ function App() {
       // Update filtered items with the current page's data
       setFilteredItems(validItems);
       
+      // Update pagination state with the response data
+      if (data.pagination) {
+        setPagination({
+          currentPage: data.pagination.current_page || data.pagination.currentPage || page,
+          pageSize: data.pagination.page_size || data.pagination.pageSize || pageSize,
+          totalPages: data.pagination.total_pages || data.pagination.totalPages || 1,
+          totalItems: data.pagination.total_items || data.pagination.totalItems || validItems.length,
+          hasNext: data.pagination.has_next || data.pagination.hasNext || false,
+          hasPrevious: data.pagination.has_previous || data.pagination.hasPrevious || false
+        });
+      }
+
+      // Update total available papers from ArXiv if provided
+      if (data.pagination && data.pagination.total_available_from_arxiv) {
+        setTotalAvailableFromArxiv(data.pagination.total_available_from_arxiv);
+        console.log('Total available papers from ArXiv:', data.pagination.total_available_from_arxiv);
+      }
+      
       // Update chart data with all available items (only on first page load)
       if (page === 1) {
         try {
-          updateChartData(validItems);
+          // Fetch all papers for charts to show complete data
+          fetchAllPapersForCharts();
         } catch (chartError) {
           console.error('Error updating chart data:', chartError);
         }
@@ -480,10 +535,108 @@ function App() {
     }
   }, [updateChartData]);
 
+  // Fetch total available papers from ArXiv logs
+  const fetchTotalAvailableFromArxiv = useCallback(async () => {
+    try {
+      // Get the total from the papers API
+      const response = await fetch(`${API_ENDPOINTS.PAPERS}?page_size=1`);
+      const data = await response.json();
+      
+      if (data.pagination && data.pagination.total_available_from_arxiv) {
+        setTotalAvailableFromArxiv(data.pagination.total_available_from_arxiv);
+        console.log('Total available papers from ArXiv:', data.pagination.total_available_from_arxiv);
+      }
+    } catch (error) {
+      console.error('Error fetching total available papers:', error);
+    }
+  }, []);
+
+  // Fetch all papers for charts to show complete data
+  const fetchAllPapersForCharts = useCallback(async () => {
+    try {
+      addLog({
+        type: 'info',
+        message: 'Fetching all papers for charts',
+        details: { purpose: 'chart_data' }
+      });
+      
+      // Use a large page size to get all papers
+      const response = await fetch(`${API_ENDPOINTS.PAPERS}?page_size=1000`);
+      const data = await response.json();
+      
+      if (data.papers && data.papers.length > 0) {
+        console.log(`Fetched ${data.papers.length} papers for charts`);
+        
+        // Debug: Log the first paper to see the actual structure
+        console.log('First paper from API:', data.papers[0]);
+        console.log('Available fields in first paper:', Object.keys(data.papers[0]));
+        
+        // Format the papers for chart data
+        const formattedPapers = data.papers.map(paper => ({
+          id: paper.id || `paper-${Math.random()}`,
+          title: paper.title || 'Untitled',
+          line1: paper.title || 'Untitled',
+          line2: paper.authors || 'Unknown Authors',
+          line3: paper.abstract ? paper.abstract.substring(0, 100) + '...' : 'No abstract available',
+          line4: paper.url || '#',
+          categories: paper.categories || [],
+          technologies: paper.technologies || [],
+          Cluster: paper.cluster || 'Unknown',
+          // Map the date fields correctly - the API returns 'Month' and 'Year' (capitalized)
+          Month: paper.Month || paper.month || null,
+          Year: paper.Year || paper.year || null,
+          // Also include the original data structure for fallback
+          _original: paper
+        }));
+        
+        // Debug: Log the first formatted paper
+        console.log('First formatted paper:', formattedPapers[0]);
+        console.log('Month/Year in first formatted paper:', {
+          Month: formattedPapers[0].Month,
+          Year: formattedPapers[0].Year
+        });
+        
+        // Update chart data with all papers
+        updateChartData(formattedPapers);
+        
+        addLog({
+          type: 'success',
+          message: `Charts updated with ${formattedPapers.length} papers`,
+          details: { papersCount: formattedPapers.length }
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching papers for charts:', error);
+      addLog({
+        type: 'error',
+        message: 'Failed to fetch papers for charts',
+        details: { error: error.message }
+      });
+      
+      // If fetching all papers fails, we can't fallback to current page data
+      // since this function is called independently. Just log the error.
+      console.error('Chart data update failed completely');
+    }
+  }, [updateChartData, addLog]);
+
   // Load initial data on component mount
   useEffect(() => {
     loadPapers(1, 20);
+    fetchTotalAvailableFromArxiv(); // Fetch total available papers from ArXiv
   }, []); // Removed loadPapers from deps to prevent infinite loops
+  
+  // Initialize header search query and optional keywords when currentSearch changes
+  useEffect(() => {
+    console.log('App.js: currentSearch changed:', currentSearch);
+    if (currentSearch?.query) {
+      console.log('App.js: Setting headerSearchQuery to:', currentSearch.query);
+      setHeaderSearchQuery(currentSearch.query);
+    }
+    if (currentSearch?.keywords) {
+      console.log('App.js: Setting headerOptionalKeywords to:', currentSearch.keywords);
+      setHeaderOptionalKeywords(currentSearch.keywords);
+    }
+  }, [currentSearch?.query, currentSearch?.keywords]);
   
   // Handle pagination controls
   const handlePageChange = (newPage) => {
@@ -502,6 +655,13 @@ function App() {
   const handleSearch = useCallback(async (searchParams) => {
     console.log('Search initiated with params:', searchParams);
     
+    // Add log for search initiation
+    addLog({
+      type: 'info',
+      message: 'Search initiated',
+      details: searchParams
+    });
+    
     // Handle both direct string (backward compatibility) and object with query/keywords
     let query = '';
     let keywords = '';
@@ -517,6 +677,11 @@ function App() {
       if (!query) return;
     } else {
       console.error('Invalid search parameters:', searchParams);
+      addLog({
+        type: 'error',
+        message: 'Invalid search parameters',
+        details: searchParams
+      });
       return;
     }
     
@@ -526,6 +691,12 @@ function App() {
     setIsLoading(true);
     setSelectedMonthIndex(null);
     setSelectedCategory(null);
+    
+    addLog({
+      type: 'info',
+      message: `Searching for: "${query}"${keywords ? ` with keywords: ${keywords}` : ''}`,
+      details: { query, keywords }
+    });
     
     try {
       // Call the backend API with search parameters
@@ -538,31 +709,58 @@ function App() {
       
       console.log('Sending search payload:', searchPayload);
       
+      addLog({
+        type: 'info',
+        message: 'Sending search request to backend',
+        details: searchPayload
+      });
+      
       // First update the search terms in the backend
       const response = await updateSearchTerms(searchPayload);
       console.log('Backend update response:', response);
       
+      addLog({
+        type: 'success',
+        message: 'Search terms updated in backend',
+        details: response
+      });
+      
       // Handle different response formats
       if (response.warning) {
         console.warn('Warning from backend:', response.warning);
+        addLog({
+          type: 'warning',
+          message: 'Backend warning received',
+          details: response.warning
+        });
         alert(response.warning);
         return;
       }
       
-      // Update current search in context
-      setCurrentSearch({
-        query: query,
-        keywords: keywords
+      // Update current search in context and add to history
+      const searchParams = { query, keywords };
+      setCurrentSearch(searchParams);
+      addToHistory(searchParams);
+      
+      addLog({
+        type: 'info',
+        message: 'Loading papers data...',
+        details: { page: 1, pageSize: pagination.pageSize }
       });
       
       // Reset to first page when performing a new search
       await loadPapers(1, pagination.pageSize, searchParams);
     } catch (error) {
       console.error('Search failed:', error);
+      addLog({
+        type: 'error',
+        message: 'Search failed',
+        details: error.message
+      });
     } finally {
       setIsLoading(false);
     }
-  }, [pagination.pageSize, loadPapers, setCurrentSearch]);
+  }, [pagination.pageSize, loadPapers, setCurrentSearch, addLog]);
 
   // Handle cluster filter
   const filterByCluster = useCallback((clusterName) => {
@@ -688,12 +886,16 @@ function App() {
   ];
 
   // Render loading state
-  if (isLoading) {
+  if (isLoading && hasSearched) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-indigo-500 mx-auto mb-4"></div>
-          <p className="text-lg text-gray-700">Searching for research papers...</p>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+        <div className="w-full max-w-4xl mx-auto px-6 py-8">
+          {/* Live Search Logs - Show when searching */}
+          <LiveSearchLogs 
+            isSearching={true}
+            searchQuery={currentSearch?.query || searchTerm || ''}
+            optionalKeywords={currentSearch?.keywords || optionalKeywords || ''}
+          />
         </div>
       </div>
     );
@@ -711,147 +913,293 @@ function App() {
   // Show results after search
   return (
     <ThemeProvider>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
-        <Header 
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          className="sticky top-0 z-10"
-          showBackButton={hasSearched}
-          onBack={() => setHasSearched(false)}
-        />
-        
-        {/* Search Form under Header */}
-        <div className="bg-white dark:bg-gray-800 shadow-md">
-          <div className="container mx-auto px-4 py-4">
-            <div className="max-w-4xl mx-auto">
-              <SearchForm 
-                onSearch={handleSearch} 
-                initialQuery={currentSearch?.query || ''}
-                initialKeywords={currentSearch?.keywords || ''}
-                compact={true}
-              />
-            </div>
-          </div>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+        {/* Background decorative elements */}
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-blue-400/10 to-purple-400/10 rounded-full blur-3xl"></div>
+          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-tr from-indigo-400/10 to-pink-400/10 rounded-full blur-3xl"></div>
         </div>
-        
-        <main className="container mx-auto px-4 py-6">
-          <div className="space-y-8">
-            {/* Main Search Form - Only show on search page */}
-            {!hasSearched && (
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-                  Search Papers
-                </h2>
-                <SearchForm 
-                  onSearch={handleSearch} 
-                  initialQuery={currentSearch?.query || ''}
-                  initialKeywords={currentSearch?.keywords || ''}
-                  selectedMonthIndex={selectedMonthIndex}
-                />
-              </div>
-            )}
-            
-            {activeTab === 'papers' ? (
-              <div className="space-y-6">
-                {/* Charts Grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Publications Over Time Chart */}
-                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-                      Publications Over Time
-                    </h2>
-                    <div className="h-80">
-                      <PublicationsChart 
-                        data={chartData}
-                        onMonthSelect={handleMonthSelect}
-                        selectedMonthIndex={selectedMonthIndex}
-                        onClearSelection={clearMonthFilter}
-                      />
-                    </div>
-                  </div>
-                  
-                  {/* Paper Clusters Chart */}
-                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-                      Paper Clusters
-                    </h2>
-                    <div className="h-80">
-                      <ClustersChart 
-                        papers={items}
-                        onPaperSelect={handlePaperSelect}
-                        onCategorySelect={handleCategorySelect}
-                        selectedCategory={selectedCategory}
-                      />
+
+        <div className="relative z-10">
+          <Header 
+            onSearch={handleSearch}
+            currentSearch={currentSearch}
+            handleBackClick={() => {
+              addLog({
+                type: 'info',
+                message: 'Navigating back to search page',
+                details: { from: 'results', to: 'search' }
+              });
+              setHasSearched(false);
+              setItems([]);
+              setFilteredItems([]);
+              setPagination({
+                currentPage: 1,
+                totalPages: 1,
+                totalItems: 0,
+                pageSize: 20,
+                hasNext: false,
+                hasPrevious: false
+              });
+              setSelectedPaper(null);
+              setActiveTab('papers');
+            }}
+          />
+          
+          {/* Compact Enhanced Search Form under Header */}
+          <div className="bg-gradient-to-r from-blue-50/90 via-indigo-50/90 to-purple-50/90 backdrop-blur-sm shadow-lg border-b border-white/30">
+            <div className="container mx-auto px-6 py-4">
+              <div className="max-w-4xl mx-auto">
+                <div className="bg-white/90 backdrop-blur-sm rounded-xl p-4 shadow-md border border-white/50">
+                  <div className="space-y-4">
+                    {/* Search Input Row */}
+                    <div className="flex flex-col sm:flex-row items-center space-y-3 sm:space-y-0 sm:space-x-4">
+                      {/* Search Input */}
+                      <div className="flex-1 min-w-0">
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg className="h-4 w-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                          </div>
+                          <input
+                            type="text"
+                            placeholder="Find papers on any topic — try one word (e.g., AI, LLM)"
+                            className="w-full pl-10 pr-4 py-3 rounded-lg border-2 border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all duration-300 text-gray-900 placeholder-gray-500 text-base shadow-sm hover:shadow-md"
+                            value={headerSearchQuery}
+                            onChange={(e) => setHeaderSearchQuery(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      
+                      {/* Optional Keywords Input */}
+                      <div className="flex-1 min-w-0">
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg className="h-4 w-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                            </svg>
+                          </div>
+                          <input
+                            type="text"
+                            placeholder="Optional keywords (comma-separated)..."
+                            className="w-full pl-10 pr-4 py-3 rounded-lg border-2 border-purple-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all duration-300 text-gray-900 placeholder-gray-500 text-base shadow-sm hover:shadow-md bg-purple-50/50"
+                            value={headerOptionalKeywords}
+                            onChange={(e) => setHeaderOptionalKeywords(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      
+                      {/* Search Button */}
+                      <button
+                        onClick={() => {
+                          if (headerSearchQuery.trim()) {
+                            handleSearch({
+                              query: headerSearchQuery.trim(),
+                              keywords: headerOptionalKeywords.trim()
+                            });
+                          }
+                        }}
+                        className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold rounded-lg transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 transform text-sm shadow-md"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                          <span>Search</span>
+                        </div>
+                      </button>
                     </div>
                   </div>
                 </div>
-                
-                {/* Papers List */}
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-                  <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-                    <div>
-                      <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                        {searchTerm 
-                          ? `Search Results for "${searchTerm}${optionalKeywords ? ` ,${optionalKeywords}` : ''}"` 
-                          : 'Latest Publications'}
-                      </h2>
-                      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                        Showing {items.length} of {pagination.totalItems} {pagination.totalItems === 1 ? 'result' : 'results'}
-                      </p>
+              </div>
+            </div>
+          </div>
+          
+          <main className="container mx-auto px-6 py-8">
+            <div className="space-y-8">
+              {activeTab === 'papers' ? (
+                <div className="space-y-8">
+                  {/* Enhanced Charts Grid */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    {/* Publications Over Time Chart */}
+                    <div className="group bg-gradient-to-br from-white/95 via-blue-50/90 to-indigo-50/95 backdrop-blur-md rounded-3xl shadow-2xl border border-white/60 p-8 hover:shadow-3xl transition-all duration-700 hover:-translate-y-3 hover:scale-[1.03] relative overflow-hidden">
+                      {/* Enhanced decorative background elements */}
+                      <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-blue-400/15 via-cyan-400/10 to-indigo-400/15 rounded-full blur-3xl group-hover:scale-125 transition-transform duration-700"></div>
+                      <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-indigo-400/15 via-purple-400/10 to-pink-400/15 rounded-full blur-2xl group-hover:scale-125 transition-transform duration-700"></div>
+                      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-24 h-24 bg-gradient-to-r from-cyan-400/8 to-blue-400/8 rounded-full blur-xl group-hover:scale-150 transition-transform duration-1000"></div>
+                      
+                      <div className="relative z-10">
+                        <div className="flex items-center justify-between mb-6">
+                                                           <div>
+                                   <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 via-cyan-600 to-indigo-700 bg-clip-text text-transparent leading-tight mb-2">
+                                     Publications Over Time
+                                   </h2>
+                                 </div>
+                          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 via-cyan-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-xl group-hover:scale-125 group-hover:rotate-12 transition-all duration-500">
+                            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                            </svg>
+                          </div>
+                        </div>
+                        <div className="h-80 bg-gradient-to-br from-blue-50/30 to-indigo-50/30 rounded-2xl p-4 border border-blue-100/50">
+                          <PublicationsChart 
+                            data={chartData}
+                            onMonthSelect={handleMonthSelect}
+                            selectedMonthIndex={selectedMonthIndex}
+                            onClearSelection={clearMonthFilter}
+                          />
+                        </div>
+                      </div>
                     </div>
                     
-                    {!isLoading && items.length > 0 && (
-                      <div className="text-sm text-gray-500 dark:text-gray-400">
-                        Page {pagination.currentPage} of {pagination.totalPages}
+                    {/* Paper Clusters Chart */}
+                    <div className="group bg-gradient-to-br from-white/95 via-purple-50/90 to-pink-50/95 backdrop-blur-md rounded-3xl shadow-2xl border border-white/60 p-8 hover:shadow-3xl transition-all duration-700 hover:-translate-y-3 hover:scale-[1.03] relative overflow-hidden">
+                      {/* Enhanced decorative background elements */}
+                      <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-purple-400/15 via-pink-400/10 to-rose-400/15 rounded-full blur-3xl group-hover:scale-125 transition-transform duration-700"></div>
+                      <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-pink-400/15 via-rose-400/10 to-purple-400/15 rounded-full blur-2xl group-hover:scale-125 transition-transform duration-700"></div>
+                      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-24 h-24 bg-gradient-to-r from-pink-400/8 to-purple-400/8 rounded-full blur-xl group-hover:scale-150 transition-transform duration-1000"></div>
+                      
+                      <div className="relative z-10">
+                        <div className="flex items-center justify-between mb-6">
+                                                           <div>
+                                   <h2 className="text-3xl font-bold bg-gradient-to-r from-purple-600 via-pink-600 to-rose-700 bg-clip-text text-transparent leading-tight mb-2">
+                                     Paper Clusters
+                                   </h2>
+                                 </div>
+                          <div className="w-16 h-16 bg-gradient-to-br from-purple-500 via-pink-500 to-rose-600 rounded-2xl flex items-center justify-center shadow-xl group-hover:scale-125 group-hover:rotate-12 transition-all duration-500">
+                            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                            </svg>
+                          </div>
+                        </div>
+                        <div className="h-80 bg-gradient-to-br from-purple-50/30 to-pink-50/30 rounded-2xl p-4 border border-purple-100/50">
+                          <ClustersChart 
+                            papers={items}
+                            onPaperSelect={handlePaperSelect}
+                            onCategorySelect={handleCategorySelect}
+                            selectedCategory={selectedCategory}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Enhanced Papers List */}
+                  <div className="group bg-gradient-to-br from-white/95 to-gray-50/95 backdrop-blur-md rounded-3xl shadow-xl border border-white/40 overflow-hidden hover:shadow-2xl transition-all duration-500 hover:-translate-y-1 relative">
+                    {/* Decorative background elements */}
+                    <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-gray-400/5 to-blue-400/5 rounded-full blur-3xl group-hover:scale-110 transition-transform duration-500"></div>
+                    <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-indigo-400/5 to-purple-400/5 rounded-full blur-2xl group-hover:scale-110 transition-transform duration-500"></div>
+                    
+                    <div className="relative z-10">
+                      <div className="px-8 py-8 border-b border-gray-200/30 bg-gradient-to-r from-gray-50/60 via-blue-50/40 to-indigo-50/60">
+                        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center space-y-4 lg:space-y-0">
+                          <div className="flex-1">
+                            <h2 className="text-3xl font-bold bg-gradient-to-r from-gray-800 via-gray-700 to-blue-700 bg-clip-text text-transparent mb-3 leading-tight">
+                              {searchTerm 
+                                ? `Search Results for "${searchTerm.toUpperCase()}${optionalKeywords ? ` ,${optionalKeywords.toUpperCase()}` : ''}"` 
+                                : 'Latest Publications'}
+                            </h2>
+                            <div className="flex flex-wrap items-center space-x-6 text-sm text-gray-600">
+                              <span className="flex items-center space-x-2 px-3 py-1.5 bg-green-100 rounded-full border border-green-200">
+                                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                                <span className="font-medium">Showing {items.length} of {pagination.totalItems} {pagination.totalItems === 1 ? 'result' : 'results'}</span>
+                              </span>
+                              {!isLoading && items.length > 0 && (
+                                <span className="flex items-center space-x-2 px-3 py-1.5 bg-blue-100 rounded-full border border-blue-200">
+                                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                                  <span className="font-medium">Page {pagination.currentPage} of {pagination.totalPages}</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          
+                                                    {!isLoading && items.length > 0 && (
+                            <div className="px-6 py-3 bg-gradient-to-r from-indigo-100 via-purple-100 to-pink-100 rounded-2xl border border-indigo-200/50 shadow-lg">
+                              <span className="text-lg font-bold text-indigo-700">
+                                📚 {pagination.totalItems} Papers Found
+                                {totalAvailableFromArxiv > 0 && (
+                                  <span className="text-sm font-normal text-indigo-600 ml-2">
+                                    (out of {totalAvailableFromArxiv.toLocaleString()} total available)
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <ListSection 
+                        items={items}
+                        isLoading={isLoading && pagination.currentPage === 1}
+                        onItemClick={handlePaperSelect}
+                        selectedItemId={selectedPaper?.id}
+                        onCategorySelect={handleCategorySelect}
+                      />
+                      
+                      {items.length === 0 && !isLoading ? (
+                      <div className="p-12 text-center">
+                        <div className="w-20 h-20 bg-gradient-to-br from-gray-200 to-gray-300 rounded-full flex items-center justify-center mx-auto mb-4">
+                          <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6-4h6m2 5.291A7.962 7.962 0 0112 15c-2.34 0-4.47-.881-6.08-2.33" />
+                          </svg>
+                        </div>
+                        <h3 className="text-xl font-semibold text-gray-700 mb-2">No Papers Found</h3>
+                        <p className="text-gray-500">Try a different search term or adjust your filters</p>
+                      </div>
+                    ) : (
+                      <div className="px-8 py-6 border-t border-gray-200/50 bg-gradient-to-r from-gray-50/50 to-blue-50/50">
+                        <Pagination
+                          currentPage={pagination.currentPage}
+                          totalPages={pagination.totalPages}
+                          onPageChange={handlePageChange}
+                          pageSize={pagination.pageSize}
+                          onPageSizeChange={handlePageSizeChange}
+                          totalItems={pagination.totalItems}
+                          hasNext={pagination.hasNext}
+                          hasPrevious={pagination.hasPrevious}
+                        />
                       </div>
                     )}
                   </div>
-                  
-                  <ListSection 
-                    items={items}
-                    isLoading={isLoading && pagination.currentPage === 1}
-                    onItemClick={handlePaperSelect}
-                    selectedItemId={selectedPaper?.id}
-                    onCategorySelect={handleCategorySelect}
-                  />
-                  
-                  {items.length === 0 && !isLoading ? (
-                    <div className="p-6 text-center">
-                      <p className="text-gray-500 dark:text-gray-400">No papers found. Try a different search term.</p>
-                    </div>
-                  ) : (
-                    <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
-                      <Pagination
-                        currentPage={pagination.currentPage}
-                        totalPages={pagination.totalPages}
-                        onPageChange={handlePageChange}
-                        pageSize={pagination.pageSize}
-                        onPageSizeChange={handlePageSizeChange}
-                        totalItems={pagination.totalItems}
-                        hasNext={pagination.hasNext}
-                        hasPrevious={pagination.hasPrevious}
-                      />
-                    </div>
-                  )}
                 </div>
-              </div>
-            ) : (
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-                  Clusters View
-                </h2>
-                <ClustersChart 
-                  papers={items}
-                  onPaperSelect={handlePaperSelect}
-                  expandedView={true}
-                />
-              </div>
-            )}
-          </div>
-        </main>
+                </div>
+              ) : (
+                <div className="bg-white/90 backdrop-blur-sm rounded-3xl shadow-2xl border border-white/20 p-8">
+                  <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-3xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
+                      Clusters View
+                    </h2>
+                    <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-500 rounded-2xl flex items-center justify-center shadow-lg">
+                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                      </svg>
+                    </div>
+                  </div>
+                  <ClustersChart 
+                    papers={items}
+                    onPaperSelect={handlePaperSelect}
+                    expandedView={true}
+                  />
+                </div>
+              )}
+            </div>
+          </main>
+        </div>
+        {/* Live Logs */}
+        <LiveLogs />
       </div>
     </ThemeProvider>
   );
 }
 
-export default App;
+// Wrap the app with LogsProvider
+function AppWrapper() {
+  return (
+    <LogsProvider>
+      <App />
+    </LogsProvider>
+  );
+}
+
+export default AppWrapper;

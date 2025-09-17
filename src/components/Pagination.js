@@ -1,16 +1,37 @@
 import React from 'react';
 import { FiChevronLeft, FiChevronRight, FiChevronsLeft, FiChevronsRight } from 'react-icons/fi';
+import { useLogs } from '../context/LogsContext';
 
 const Pagination = ({ 
   currentPage, 
   totalPages, 
   onPageChange, 
   pageSize, 
-  onPageSizeChange,
+  onPageSizeChange, 
   totalItems,
   hasNext,
-  hasPrevious
+  hasPrevious 
 }) => {
+  const { addLog } = useLogs();
+  
+  const handlePageChange = (newPage) => {
+    addLog({
+      type: 'info',
+      message: `Navigating to page ${newPage}`,
+      details: { fromPage: currentPage, toPage: newPage, totalPages }
+    });
+    onPageChange(newPage);
+  };
+  
+  const handlePageSizeChange = (newPageSize) => {
+    addLog({
+      type: 'info',
+      message: `Page size changed to ${newPageSize}`,
+      details: { fromSize: pageSize, toSize: newPageSize, totalItems }
+    });
+    onPageSizeChange(newPageSize);
+  };
+
   // Calculate the range of items being shown
   const startItem = (currentPage - 1) * pageSize + 1;
   const endItem = Math.min(currentPage * pageSize, totalItems);
@@ -51,14 +72,14 @@ const Pagination = ({
   const pageSizeOptions = [10, 20, 50, 100];
 
   return (
-    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6 px-4 py-3 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-6 px-6 py-4">
       {/* Page size selector */}
-      <div className="flex items-center space-x-2">
-        <span className="text-sm text-gray-600 dark:text-gray-300">Show</span>
+      <div className="flex items-center space-x-3">
+        <span className="text-sm font-medium text-gray-700">Show</span>
         <select
           value={pageSize}
-          onChange={onPageSizeChange}
-          className="text-sm border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200"
+          onChange={handlePageSizeChange}
+          className="text-sm border-2 border-indigo-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-200 hover:border-indigo-300"
         >
           {pageSizeOptions.map(size => (
             <option key={size} value={size}>
@@ -66,34 +87,38 @@ const Pagination = ({
             </option>
           ))}
         </select>
-        <span className="text-sm text-gray-600 dark:text-gray-300">per page</span>
+        <span className="text-sm font-medium text-gray-700">per page</span>
       </div>
 
       {/* Page info */}
-      <div className="text-sm text-gray-600 dark:text-gray-300">
-        Showing <span className="font-medium">{startItem}</span> to{' '}
-        <span className="font-medium">{endItem}</span> of{' '}
-        <span className="font-medium">{totalItems}</span> results
+      <div className="text-sm text-gray-600 bg-gradient-to-r from-indigo-50 to-purple-50 px-4 py-2 rounded-xl border border-indigo-200/50">
+        Showing <span className="font-semibold text-indigo-700">{startItem}</span> to{' '}
+        <span className="font-semibold text-indigo-700">{endItem}</span> of{' '}
+        <span className="font-semibold text-indigo-700">{totalItems}</span> results
       </div>
 
       {/* Page navigation */}
-      <div className="flex items-center space-x-1">
+      <div className="flex items-center space-x-2">
         <button
-          onClick={() => onPageChange(1)}
+          onClick={() => handlePageChange(1)}
           disabled={currentPage === 1}
-          className={`p-1.5 rounded-md ${currentPage === 1 
-            ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed' 
-            : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+          className={`p-2 rounded-xl transition-all duration-200 ${
+            currentPage === 1 
+              ? 'text-gray-400 cursor-not-allowed' 
+              : 'text-indigo-600 hover:bg-indigo-50 hover:shadow-md hover:-translate-y-0.5'
+          }`}
           aria-label="First page"
         >
           <FiChevronsLeft size={18} />
         </button>
         <button
-          onClick={() => onPageChange(currentPage - 1)}
+          onClick={() => handlePageChange(currentPage - 1)}
           disabled={!hasPrevious}
-          className={`p-1.5 rounded-md ${!hasPrevious 
-            ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed' 
-            : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+          className={`p-2 rounded-xl transition-all duration-200 ${
+            !hasPrevious 
+              ? 'text-gray-400 cursor-not-allowed' 
+              : 'text-indigo-600 hover:bg-indigo-50 hover:shadow-md hover:-translate-y-0.5'
+          }`}
           aria-label="Previous page"
         >
           <FiChevronLeft size={18} />
@@ -102,11 +127,11 @@ const Pagination = ({
         {getPageNumbers().map((page) => (
           <button
             key={page}
-            onClick={() => onPageChange(page)}
-            className={`w-8 h-8 rounded-md text-sm font-medium ${
+            onClick={() => handlePageChange(page)}
+            className={`w-10 h-10 rounded-xl text-sm font-semibold transition-all duration-200 ${
               currentPage === page
-                ? 'bg-indigo-600 text-white'
-                : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
+                ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/25'
+                : 'text-gray-700 hover:bg-gradient-to-r hover:from-indigo-50 hover:to-purple-50 hover:shadow-md hover:-translate-y-0.5'
             }`}
           >
             {page}
@@ -114,21 +139,25 @@ const Pagination = ({
         ))}
 
         <button
-          onClick={() => onPageChange(currentPage + 1)}
+          onClick={() => handlePageChange(currentPage + 1)}
           disabled={!hasNext}
-          className={`p-1.5 rounded-md ${!hasNext 
-            ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed' 
-            : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+          className={`p-2 rounded-xl transition-all duration-200 ${
+            !hasNext 
+              ? 'text-gray-400 cursor-not-allowed' 
+              : 'text-indigo-600 hover:bg-indigo-50 hover:shadow-md hover:-translate-y-0.5'
+          }`}
           aria-label="Next page"
         >
           <FiChevronRight size={18} />
         </button>
         <button
-          onClick={() => onPageChange(totalPages)}
+          onClick={() => handlePageChange(totalPages)}
           disabled={currentPage === totalPages}
-          className={`p-1.5 rounded-md ${currentPage === totalPages 
-            ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed' 
-            : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+          className={`p-2 rounded-xl transition-all duration-200 ${
+            currentPage === totalPages 
+              ? 'text-gray-400 cursor-not-allowed' 
+              : 'text-indigo-600 hover:bg-indigo-50 hover:shadow-md hover:-translate-y-0.5'
+          }`}
           aria-label="Last page"
         >
           <FiChevronsRight size={18} />
