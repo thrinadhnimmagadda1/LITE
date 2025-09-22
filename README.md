@@ -185,6 +185,4 @@ public/              # CRA public assets
 
 ---
 
-## 12) Support
 
-Open an issue or contact the maintainer for help reproducing environment issues.
