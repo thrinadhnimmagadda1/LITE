@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useEffect } from 'react';
+import React, { useCallback, useRef, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -35,10 +35,10 @@ const PublicationsChart = ({
   const { addLog } = useLogs();
   
   // Month labels for logging
-  const monthLabels = [
+  const monthLabels = useMemo(() => [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
-  ];
+  ], []);
 
   const handleClick = useCallback((event) => {
     if (!chartRef.current) return;
@@ -55,11 +55,13 @@ const PublicationsChart = ({
       const clickedIndex = points[0].index;
       // Only call onMonthSelect if clicking a different month
       if (clickedIndex !== selectedMonthIndex) {
-        const monthName = monthLabels[clickedIndex];
+        const label = Array.isArray(data?.labels) ? data.labels[clickedIndex] : monthLabels[clickedIndex] || '';
+        const monthName = label || monthLabels[clickedIndex];
+        const value = Array.isArray(data?.datasets?.[0]?.data) ? data.datasets[0].data[clickedIndex] : undefined;
         addLog({
           type: 'info',
           message: `Month selected on chart: ${monthName}`,
-          details: { monthIndex: clickedIndex, monthName, publications: data[clickedIndex] }
+          details: { monthIndex: clickedIndex, monthName, publications: value }
         });
         onMonthSelect(clickedIndex);
       }

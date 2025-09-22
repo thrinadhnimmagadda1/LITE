@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { Bar } from 'react-chartjs-2';
-import axios from 'axios';
-import { API_ENDPOINTS } from '../config';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -22,7 +20,7 @@ ChartJS.register(
   Legend
 );
 
-const ClustersChart = () => {
+const ClustersChart = ({ papers = [], onPaperSelect, onCategorySelect, selectedCategory, expandedView }) => {
   const [chartData, setChartData] = useState({
     labels: [],
     datasets: [{
@@ -33,7 +31,7 @@ const ClustersChart = () => {
       borderWidth: 1,
     }]
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   // Generate colors based on the number of clusters
@@ -49,49 +47,57 @@ const ClustersChart = () => {
     return colors;
   };
 
+  // Recompute chart data whenever papers change
   useEffect(() => {
-    const fetchClusterData = async () => {
-      try {
-        setLoading(true);
-        // Get all papers by using a large page size
-        const response = await axios.get(`${API_ENDPOINTS.PAPERS}?page_size=1000`);
-        const papers = response.data.papers || [];
-        
-        console.log(`Fetched ${papers.length} papers for clustering visualization`);
-        
-        // Count papers per cluster
-        const clusterCounts = {};
-        papers.forEach(paper => {
-          const cluster = paper.cluster !== undefined ? `Cluster ${paper.cluster}` : 'Uncategorized';
-          clusterCounts[cluster] = (clusterCounts[cluster] || 0) + 1;
-        });
-
-        const labels = Object.keys(clusterCounts);
-        const counts = Object.values(clusterCounts);
-        const backgroundColors = generateColors(labels.length);
-
+    try {
+      setLoading(false);
+      if (!Array.isArray(papers) || papers.length === 0) {
         setChartData({
-          labels,
+          labels: [],
           datasets: [{
             label: 'Papers per Cluster',
-            data: counts,
-            backgroundColor: backgroundColors,
-            borderColor: backgroundColors.map(color => color.replace('0.6', '1')),
+            data: [],
+            backgroundColor: [],
+            borderColor: [],
             borderWidth: 1,
             borderRadius: 4,
           }]
         });
         setError(null);
-      } catch (err) {
-        console.error('Error fetching cluster data:', err);
-        setError('Failed to load cluster data. Please try again later.');
-      } finally {
-        setLoading(false);
+        return;
       }
-    };
 
-    fetchClusterData();
-  }, []);
+      const clusterCounts = {};
+      papers.forEach(paper => {
+        // Prefer label fields, fall back to numeric cluster
+        const label = paper.cluster_label || paper.Cluster || paper.cluster;
+        const cluster = label !== undefined && label !== null && String(label).trim() !== ''
+          ? String(label)
+          : 'Uncategorized';
+        clusterCounts[cluster] = (clusterCounts[cluster] || 0) + 1;
+      });
+
+      const labels = Object.keys(clusterCounts);
+      const counts = Object.values(clusterCounts);
+      const backgroundColors = generateColors(labels.length);
+
+      setChartData({
+        labels,
+        datasets: [{
+          label: 'Papers per Cluster',
+          data: counts,
+          backgroundColor: backgroundColors,
+          borderColor: backgroundColors.map(color => color.replace('0.6', '1')),
+          borderWidth: 1,
+          borderRadius: 4,
+        }]
+      });
+      setError(null);
+    } catch (err) {
+      console.error('Error computing cluster data from props:', err);
+      setError('Failed to compute cluster data.');
+    }
+  }, [papers]);
 
   if (loading) {
     return (

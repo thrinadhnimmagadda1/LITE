@@ -1,8 +1,8 @@
 {
     "must_include": [
-        "deep learning"
+        "BERT"
     ],
     "optional_keywords": [
-        "time series"
+        "data mining"
     ]
 }

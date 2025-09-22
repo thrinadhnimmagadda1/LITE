@@ -1,70 +1,190 @@
-# Getting Started with Create React App
+# LITE — Literature Intelligence, Timeline, and Exploration
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Full‑stack app to search arXiv, cluster papers, and visualize trends.
 
-## Available Scripts
+### Stack
+- Backend: Django + Django REST Framework (Python 3.12)
+- Frontend: React (CRA), Chart.js
+- Data: CSVs produced by `backend/scripts/arxiv_kmeans_sbert_umap.py`
 
-In the project directory, you can run:
+---
 
-### `npm start`
+## 1) Prerequisites
+- Python 3.12
+- Node.js 18+ and npm 9+
+- macOS/Linux or WSL (Windows)
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+Optional: direnv or dotenv if you prefer environment files.
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+---
 
-### `npm test`
+## 2) Backend — Django API
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+All commands are relative to the repo root unless stated.
 
-### `npm run build`
+1. Create and activate virtualenv
+```bash
+python3 -m venv backend/venv
+source backend/venv/bin/activate
+```
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+2. Install dependencies
+```bash
+pip install -r backend/requirements.txt
+```
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+3. Apply migrations
+```bash
+python backend/manage.py migrate
+```
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+4. Run the server
+```bash
+python backend/manage.py runserver 0.0.0.0:8000
+```
 
-### `npm run eject`
+API will be available at `http://localhost:8000/api/`.
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+---
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+## 3) Frontend — React App
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+1. Install dependencies
+```bash
+npm install
+```
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+2. Configure API URL (optional)
+- Defaults to `http://localhost:8000` via `src/config.js`.
+- You can override with environment var: `REACT_APP_API_URL`.
 
-## Learn More
+3. Start dev server
+```bash
+npm start
+```
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+App runs at `http://localhost:3000` and proxies to the backend.
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+---
 
-### Code Splitting
+## 4) Data Flow and Features
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+- Search: The frontend calls `POST /api/search-terms/` with a query (and optional keywords). The backend updates `backend/config.json` and executes `backend/scripts/arxiv_kmeans_sbert_umap.py`, which produces clustering CSVs under `backend/scripts/out/`.
+- Papers API: `GET /api/papers/?page_size=100` returns processed papers (merged with clustering info when available) and pagination.
+- Clusters chart: Reads the currently loaded papers from the frontend state and aggregates counts by `cluster`/`cluster_label`.
+- Publications Over Time: Groups the loaded papers by Month/Year and displays the last 12 months.
+- Total available: The frontend calls `GET /api/papers/?get_latest_log_info=true` which parses the latest extractor log and shows “(out of X total available)”.
 
-### Analyzing the Bundle Size
+---
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+## 5) Common Commands
 
-### Making a Progressive Web App
+Backend (from repo root with venv active):
+```bash
+python backend/manage.py makemigrations
+python backend/manage.py migrate
+python backend/manage.py createsuperuser
+python backend/manage.py runserver 0.0.0.0:8000
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+Frontend:
+```bash
+npm start
+npm run build
+```
 
-### Advanced Configuration
+---
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+## 6) Environment and Configuration
 
-### Deployment
+- Frontend base URL: `src/config.js`
+  - `API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000'`
+  - Endpoints used:
+    - `GET /api/papers/`
+    - `GET /api/papers/?get_latest_log_info=true`
+    - `POST /api/search-terms/`
+    - `GET /api/search-terms/clear/`
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+- Backend settings: `backend/config/settings.py`
+- Script output: `backend/scripts/out/*.csv`
+- Logs parsed for totals: `backend/scripts/logs/arxiv_extractor_*.log`
 
-### `npm run build` fails to minify
+---
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+## 7) Running the Full Dev Stack (Quickstart)
+
+Terminal 1 — Backend:
+```bash
+cd backend
+source venv/bin/activate
+python manage.py migrate
+python manage.py runserver 0.0.0.0:8000
+```
+
+Terminal 2 — Frontend:
+```bash
+npm install
+npm start
+```
+
+Open `http://localhost:3000`.
+
+---
+
+## 8) Triggering a Search (Example)
+
+In the UI search box, try:
+- Query: `large language models`
+- Optional keywords: `safety, evaluation`
+
+Flow:
+1) Frontend clears search terms, posts new terms. 2) Backend runs the extractor script. 3) Frontend polls and then loads papers via `/api/papers/`. 4) Charts update from the loaded papers.
+
+---
+
+## 9) Deployment Notes
+
+- Production build (frontend):
+```bash
+npm run build
+```
+- Serve built assets with your web server or let Django serve the SPA via `templates/index.html` and static files settings.
+- Ensure `REACT_APP_API_URL` points to your API base (without trailing `/api` because it’s already included in `config/urls.py`).
+
+---
+
+## 10) Troubleshooting
+
+- Frontend builds but charts don't update:
+  - Confirm the backend is running at `http://localhost:8000` and endpoints respond (check the browser network tab for `/api/papers/`).
+  - Ensure `backend/scripts/out/*.csv` exists after running a search; the extractor script must produce files.
+
+- “Total available” number not updating:
+  - The backend parses the newest file in `backend/scripts/logs/`. Verify the latest log contains a line like: `Got first page: 100 of 8209 total results`.
+  - Frontend calls `GET /api/papers/?get_latest_log_info=true`; verify it returns `{ latest_log_total: <number> }` in the browser dev tools.
+
+- CORS or preflight issues:
+  - Run both dev servers locally (3000 and 8000). CRA dev proxy is configured; if you change ports, update environment variables accordingly.
+
+- Python dependencies failing to build:
+  - Make sure you’re on Python 3.12 and have developer tools installed (Xcode CLT on macOS).
+
+---
+
+## 11) Project Structure (high level)
+
+```
+backend/
+  api/               # Django REST API
+  config/            # Django settings & urls
+  scripts/           # arXiv extractor + outputs (out/) and logs/
+  manage.py
+src/                 # React app source
+public/              # CRA public assets
+```
+
+---
+
+## 12) Support
+
+Open an issue or contact the maintainer for help reproducing environment issues.

@@ -495,14 +495,11 @@ function App() {
         console.log('Total available papers from ArXiv:', data.pagination.total_available_from_arxiv);
       }
       
-      // Update chart data with all available items (only on first page load)
-      if (page === 1) {
-        try {
-          // Fetch all papers for charts to show complete data
-          fetchAllPapersForCharts();
-        } catch (chartError) {
-          console.error('Error updating chart data:', chartError);
-        }
+      // Update publications chart using the freshly loaded items so it reflects the current results
+      try {
+        updateChartData(page > 1 ? [...items, ...validItems] : validItems);
+      } catch (chartError) {
+        console.error('Error updating chart data from current items:', chartError);
       }
       
       console.log(`Page ${page} loaded successfully with ${validItems.length} items`);
@@ -538,13 +535,15 @@ function App() {
   // Fetch total available papers from ArXiv logs
   const fetchTotalAvailableFromArxiv = useCallback(async () => {
     try {
-      // Get the total from the papers API
-      const response = await fetch(`${API_ENDPOINTS.PAPERS}?page_size=1`);
+      // Query a lightweight endpoint to get latest log total and bypass cache with timestamp
+      const response = await fetch(`${API_ENDPOINTS.PAPERS}?get_latest_log_info=true&_t=${Date.now()}`);
       const data = await response.json();
-      
-      if (data.pagination && data.pagination.total_available_from_arxiv) {
-        setTotalAvailableFromArxiv(data.pagination.total_available_from_arxiv);
-        console.log('Total available papers from ArXiv:', data.pagination.total_available_from_arxiv);
+      if (data && (data.latest_log_total || data.pagination?.total_available_from_arxiv)) {
+        const total = data.latest_log_total || data.pagination.total_available_from_arxiv;
+        if (typeof total === 'number') {
+          setTotalAvailableFromArxiv(total);
+          console.log('Total available papers from ArXiv:', total);
+        }
       }
     } catch (error) {
       console.error('Error fetching total available papers:', error);
@@ -561,7 +560,7 @@ function App() {
       });
       
       // Use a large page size to get all papers
-      const response = await fetch(`${API_ENDPOINTS.PAPERS}?page_size=1000`);
+      const response = await fetch(`${API_ENDPOINTS.PAPERS}?page_size=1000&_t=${Date.now()}`);
       const data = await response.json();
       
       if (data.papers && data.papers.length > 0) {
@@ -621,7 +620,7 @@ function App() {
 
   // Load initial data on component mount
   useEffect(() => {
-    loadPapers(1, 20);
+    loadPapers(1, 100);
     fetchTotalAvailableFromArxiv(); // Fetch total available papers from ArXiv
   }, []); // Removed loadPapers from deps to prevent infinite loops
   
@@ -750,6 +749,8 @@ function App() {
       
       // Reset to first page when performing a new search
       await loadPapers(1, pagination.pageSize, searchParams);
+      // Refresh total available from latest logs after search completes
+      fetchTotalAvailableFromArxiv();
     } catch (error) {
       console.error('Search failed:', error);
       addLog({
