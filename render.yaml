@@ -1,17 +1,15 @@
 services:
-  # Frontend Service
-  - type: web
+  # Frontend Static Site
+  - type: static
     name: lite-frontend
     env: node
     buildCommand: npm install && npm run build
-    startCommand: npm start
+    staticPublishPath: build
     envVars:
       - key: NODE_VERSION
         value: 18.x
-      - key: PORT
-        value: 10000
       - key: REACT_APP_API_URL
-        value: https://lite-evolution-backend.onrender.com/api
+        value: https://lite-backend.onrender.com/api
     plan: free
 
   # Backend Service
@@ -22,18 +20,16 @@ services:
       pip install -r backend/requirements.txt
       python backend/manage.py migrate
       python backend/manage.py collectstatic --noinput
-    startCommand: gunicorn backend.wsgi:application --chdir backend
+    startCommand: gunicorn config.wsgi:application --chdir backend
     envVars:
       - key: PYTHON_VERSION
-        value: 3.9.0
-      - key: PORT
-        value: 10001
+        value: 3.12.0
       - key: DEBUG
         value: 'False'
       - key: SECRET_KEY
         generateValue: true
       - key: DJANGO_SETTINGS_MODULE
-        value: backend.settings.production
+        value: config.settings
     plan: free
 
   # Database (if using SQLite, this is just for reference - consider using Render's PostgreSQL instead)

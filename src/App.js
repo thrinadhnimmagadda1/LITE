@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Routes, Route } from 'react-router-dom';
 import ReactDOM from 'react-dom';
 import { fetchPapers, updateSearchTerms } from './services/api';
 import { API_ENDPOINTS } from './config';
@@ -11,6 +12,7 @@ import ListSection from './components/ListSection';
 import SearchPage from './components/SearchPage';
 import Header from './components/Header';
 import Pagination from './components/Pagination';
+import AboutSection from './components/AboutSection';
 import './App.css';
 import { useLogs } from './context/LogsContext';
 import LiveLogs from './components/LiveLogs';
@@ -914,12 +916,7 @@ function App() {
   // Show results after search
   return (
     <ThemeProvider>
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
-        {/* Background decorative elements */}
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-blue-400/10 to-purple-400/10 rounded-full blur-3xl"></div>
-          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-tr from-indigo-400/10 to-pink-400/10 rounded-full blur-3xl"></div>
-        </div>
+      <div className="min-h-screen bg-slate-50">
 
         <div className="relative z-10">
           <Header 
@@ -948,10 +945,10 @@ function App() {
           />
           
           {/* Compact Enhanced Search Form under Header */}
-          <div className="bg-gradient-to-r from-blue-50/90 via-indigo-50/90 to-purple-50/90 backdrop-blur-sm shadow-lg border-b border-white/30">
+          <div className="bg-white shadow-sm border-b border-gray-200">
             <div className="container mx-auto px-6 py-4">
               <div className="max-w-4xl mx-auto">
-                <div className="bg-white/90 backdrop-blur-sm rounded-xl p-4 shadow-md border border-white/50">
+                <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
                   <div className="space-y-4">
                     {/* Search Input Row */}
                     <div className="flex flex-col sm:flex-row items-center space-y-3 sm:space-y-0 sm:space-x-4">
@@ -1024,11 +1021,7 @@ function App() {
                   {/* Enhanced Charts Grid */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     {/* Publications Over Time Chart */}
-                    <div className="group bg-gradient-to-br from-white/95 via-blue-50/90 to-indigo-50/95 backdrop-blur-md rounded-3xl shadow-2xl border border-white/60 p-8 hover:shadow-3xl transition-all duration-700 hover:-translate-y-3 hover:scale-[1.03] relative overflow-hidden">
-                      {/* Enhanced decorative background elements */}
-                      <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-blue-400/15 via-cyan-400/10 to-indigo-400/15 rounded-full blur-3xl group-hover:scale-125 transition-transform duration-700"></div>
-                      <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-indigo-400/15 via-purple-400/10 to-pink-400/15 rounded-full blur-2xl group-hover:scale-125 transition-transform duration-700"></div>
-                      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-24 h-24 bg-gradient-to-r from-cyan-400/8 to-blue-400/8 rounded-full blur-xl group-hover:scale-150 transition-transform duration-1000"></div>
+                    <div className="group bg-white rounded-3xl shadow-xl border border-gray-200 p-8 hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 relative overflow-hidden">
                       
                       <div className="relative z-10">
                         <div className="flex items-center justify-between mb-6">
@@ -1043,7 +1036,7 @@ function App() {
                             </svg>
                           </div>
                         </div>
-                        <div className="h-80 bg-gradient-to-br from-blue-50/30 to-indigo-50/30 rounded-2xl p-4 border border-blue-100/50">
+                        <div className="h-80 bg-slate-50 rounded-2xl p-4 border border-gray-200">
                           <PublicationsChart 
                             data={chartData}
                             onMonthSelect={handleMonthSelect}
@@ -1055,11 +1048,7 @@ function App() {
                     </div>
                     
                     {/* Paper Clusters Chart */}
-                    <div className="group bg-gradient-to-br from-white/95 via-purple-50/90 to-pink-50/95 backdrop-blur-md rounded-3xl shadow-2xl border border-white/60 p-8 hover:shadow-3xl transition-all duration-700 hover:-translate-y-3 hover:scale-[1.03] relative overflow-hidden">
-                      {/* Enhanced decorative background elements */}
-                      <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-purple-400/15 via-pink-400/10 to-rose-400/15 rounded-full blur-3xl group-hover:scale-125 transition-transform duration-700"></div>
-                      <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-pink-400/15 via-rose-400/10 to-purple-400/15 rounded-full blur-2xl group-hover:scale-125 transition-transform duration-700"></div>
-                      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-24 h-24 bg-gradient-to-r from-pink-400/8 to-purple-400/8 rounded-full blur-xl group-hover:scale-150 transition-transform duration-1000"></div>
+                    <div className="group bg-white rounded-3xl shadow-xl border border-gray-200 p-8 hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 relative overflow-hidden">
                       
                       <div className="relative z-10">
                         <div className="flex items-center justify-between mb-6">
@@ -1074,7 +1063,7 @@ function App() {
                             </svg>
                           </div>
                         </div>
-                        <div className="h-80 bg-gradient-to-br from-purple-50/30 to-pink-50/30 rounded-2xl p-4 border border-purple-100/50">
+                        <div className="h-80 bg-slate-50 rounded-2xl p-4 border border-gray-200">
                           <ClustersChart 
                             papers={items}
                             onPaperSelect={handlePaperSelect}
@@ -1087,13 +1076,10 @@ function App() {
                   </div>
                   
                   {/* Enhanced Papers List */}
-                  <div className="group bg-gradient-to-br from-white/95 to-gray-50/95 backdrop-blur-md rounded-3xl shadow-xl border border-white/40 overflow-hidden hover:shadow-2xl transition-all duration-500 hover:-translate-y-1 relative">
-                    {/* Decorative background elements */}
-                    <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-gray-400/5 to-blue-400/5 rounded-full blur-3xl group-hover:scale-110 transition-transform duration-500"></div>
-                    <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-indigo-400/5 to-purple-400/5 rounded-full blur-2xl group-hover:scale-110 transition-transform duration-500"></div>
+                  <div className="group bg-white rounded-3xl shadow-xl border border-gray-200 overflow-hidden hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 relative">
                     
                     <div className="relative z-10">
-                      <div className="px-8 py-8 border-b border-gray-200/30 bg-gradient-to-r from-gray-50/60 via-blue-50/40 to-indigo-50/60">
+                      <div className="px-8 py-8 border-b border-gray-200 bg-white">
                         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center space-y-4 lg:space-y-0">
                           <div className="flex-1">
                             <h2 className="text-3xl font-bold bg-gradient-to-r from-gray-800 via-gray-700 to-blue-700 bg-clip-text text-transparent mb-3 leading-tight">
@@ -1115,12 +1101,12 @@ function App() {
                             </div>
                           </div>
                           
-                                                    {!isLoading && items.length > 0 && (
-                            <div className="px-6 py-3 bg-gradient-to-r from-indigo-100 via-purple-100 to-pink-100 rounded-2xl border border-indigo-200/50 shadow-lg">
-                              <span className="text-lg font-bold text-indigo-700">
+                          {!isLoading && items.length > 0 && (
+                            <div className="px-6 py-3 bg-slate-50 rounded-2xl border border-gray-200 shadow-sm">
+                              <span className="text-lg font-bold text-slate-700">
                                 📚 {pagination.totalItems} Papers Found
                                 {totalAvailableFromArxiv > 0 && (
-                                  <span className="text-sm font-normal text-indigo-600 ml-2">
+                                  <span className="text-sm font-normal text-slate-600 ml-2">
                                     (out of {totalAvailableFromArxiv.toLocaleString()} total available)
                                   </span>
                                 )}
@@ -1149,7 +1135,7 @@ function App() {
                         <p className="text-gray-500">Try a different search term or adjust your filters</p>
                       </div>
                     ) : (
-                      <div className="px-8 py-6 border-t border-gray-200/50 bg-gradient-to-r from-gray-50/50 to-blue-50/50">
+                      <div className="px-8 py-6 border-t border-gray-200 bg-white">
                         <Pagination
                           currentPage={pagination.currentPage}
                           totalPages={pagination.totalPages}
@@ -1166,7 +1152,7 @@ function App() {
                 </div>
                 </div>
               ) : (
-                <div className="bg-white/90 backdrop-blur-sm rounded-3xl shadow-2xl border border-white/20 p-8">
+                <div className="bg-white rounded-3xl shadow-xl border border-gray-200 p-8">
                   <div className="flex items-center justify-between mb-6">
                     <h2 className="text-3xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
                       Clusters View
@@ -1184,6 +1170,9 @@ function App() {
                   />
                 </div>
               )}
+
+              {/* About Section */}
+              <AboutSection />
             </div>
           </main>
         </div>
@@ -1198,7 +1187,9 @@ function App() {
 function AppWrapper() {
   return (
     <LogsProvider>
-      <App />
+      <Routes>
+        <Route path="/*" element={<App />} />
+      </Routes>
     </LogsProvider>
   );
 }

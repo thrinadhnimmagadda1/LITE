@@ -6,6 +6,14 @@ import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 
+if (typeof document !== 'undefined') {
+  document.documentElement.classList.remove('dark');
+}
+
+if (typeof window !== 'undefined') {
+  localStorage.setItem('theme', 'light');
+}
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>

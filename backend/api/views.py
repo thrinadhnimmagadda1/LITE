@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from django.conf import settings
@@ -480,14 +481,34 @@ class SearchTermsAPIView(APIView):
             
             # Define the path to the script
             script_path = Path(settings.BASE_DIR).parent / 'backend' / 'scripts' / 'arxiv_kmeans_sbert_umap.py'
+            scripts_dir = script_path.parent
+            cache_dir = Path(settings.BASE_DIR) / '.cache'
+            mpl_cache_dir = cache_dir / 'matplotlib'
+            hf_cache_dir = cache_dir / 'huggingface'
+
+            # Ensure local cache directories exist (avoid home dir permissions)
+            os.makedirs(mpl_cache_dir, exist_ok=True)
+            os.makedirs(hf_cache_dir, exist_ok=True)
             
             # Run the arxiv extractor script
             try:
+                env = os.environ.copy()
+                env.setdefault('MPLCONFIGDIR', str(mpl_cache_dir))
+                env.setdefault('HF_HOME', str(hf_cache_dir))
+                env.setdefault('TRANSFORMERS_CACHE', str(hf_cache_dir))
+                env.setdefault('HF_HUB_CACHE', str(hf_cache_dir))
+                env.setdefault('HF_HUB_DISABLE_XET', '1')
+                env.setdefault('ARXIV_EXTRACTOR_BASE_DIR', str(scripts_dir))
+                env.setdefault('KMP_USE_SHM', '0')
+                env.setdefault('OMP_NUM_THREADS', '1')
+                env.setdefault('NUMBA_NUM_THREADS', '1')
+                env.setdefault('NUMBA_THREADING_LAYER', 'workqueue')
                 result = subprocess.run(
-                    ['python', str(script_path)],
+                    [sys.executable, str(script_path)],
                     capture_output=True,
                     text=True,
-                    cwd=str(script_path.parent)
+                    cwd=str(scripts_dir),
+                    env=env
                 )
                 
                 if result.returncode != 0:

@@ -92,7 +92,7 @@ const ListSection = ({ items = [], isLoading = false, onCategorySelect, onItemCl
     return (
       <div 
         key={itemId}
-        className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden hover:shadow-md transition-shadow duration-200"
+        className="paper-card bg-white rounded-lg shadow overflow-hidden hover:shadow-md transition-shadow duration-200"
         onClick={(e) => handleItemClick(e, itemId)}
         role="button"
         tabIndex={0}
@@ -102,7 +102,10 @@ const ListSection = ({ items = [], isLoading = false, onCategorySelect, onItemCl
         <div className="p-6">
           <div className="flex flex-col space-y-3">
             <div className="flex justify-between items-start">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+              <h3
+                className="paper-title text-lg font-semibold hover:text-indigo-600 transition-colors"
+                style={{ color: '#334155' }}
+              >
                 {title}
               </h3>
               {/* <span className="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap ml-4">
@@ -111,7 +114,7 @@ const ListSection = ({ items = [], isLoading = false, onCategorySelect, onItemCl
             </div>
           
             {line1 && (
-              <p className="text-sm text-gray-600 dark:text-gray-300">
+              <p className="paper-authors text-sm" style={{ color: '#475569' }}>
                 {line1}
               </p>
             )}
@@ -123,7 +126,7 @@ const ListSection = ({ items = [], isLoading = false, onCategorySelect, onItemCl
                   return techText ? (
                     <span
                       key={`tech-${itemId}-${techIndex}`}
-                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200"
+                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
                     >
                       {techText}
                     </span>
@@ -136,7 +139,7 @@ const ListSection = ({ items = [], isLoading = false, onCategorySelect, onItemCl
               {hasAbstract && (
                 <button
                   onClick={(e) => toggleAbstract(e, itemId)}
-                  className="abstract-toggle flex items-center text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 focus:outline-none transition-all duration-200 group"
+                  className="abstract-toggle flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-500 focus:outline-none transition-all duration-200 group"
                   aria-expanded={isExpanded}
                   aria-controls={`abstract-${itemId}`}
                 >
@@ -160,7 +163,7 @@ const ListSection = ({ items = [], isLoading = false, onCategorySelect, onItemCl
                   href={item.line4} 
                   target="_blank" 
                   rel="noopener noreferrer"
-                  className="inline-flex items-center text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 transition-colors duration-200"
+                  className="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-500 transition-colors duration-200"
                   onClick={e => e.stopPropagation()}
                 >
                   <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -175,20 +178,28 @@ const ListSection = ({ items = [], isLoading = false, onCategorySelect, onItemCl
             {hasAbstract && (
               <div 
                 id={`abstract-${itemId}`}
-                className={`mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 overflow-hidden transition-all duration-300 ease-in-out ${
+                className={`mt-3 pt-3 border-t border-gray-200 overflow-hidden transition-all duration-300 ease-in-out ${
                   isExpanded ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
                 }`}
                 aria-hidden={!isExpanded}
               >
-                <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 mt-2">
+                <div
+                  className="paper-abstract-box bg-white rounded-lg p-4 mt-2 border border-gray-200"
+                  style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}
+                >
                   <div className="flex items-center mb-2">
                     <svg className="w-4 h-4 text-indigo-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Abstract</h4>
+                    <h4 className="text-sm font-semibold" style={{ color: '#1f2937' }}>
+                      Abstract
+                    </h4>
                   </div>
                   <div className="pl-6">
-                    <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed tracking-wide">
+                    <p
+                      className="paper-abstract-text text-sm leading-relaxed tracking-wide"
+                      style={{ color: '#334155' }}
+                    >
                       {getItemProperty(item, 'abstract', getItemProperty(item, 'line3', 'No abstract available.'))}
                     </p>
                   </div>

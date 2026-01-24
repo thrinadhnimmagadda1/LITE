@@ -1,5 +1,4 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
 import { useLogs } from '../context/LogsContext';
 
 const Header = ({
@@ -68,7 +67,7 @@ const Header = ({
 
           
           <div className="flex items-center space-x-4">
-            <a href="#" className="text-gray-600 hover:text-indigo-600 transition-colors duration-200 hover:scale-105">
+            <a href="#about" className="text-gray-600 hover:text-indigo-600 transition-colors duration-200 hover:scale-105">
               About
             </a>
             <a href="#" className="text-gray-600 hover:text-indigo-600 transition-colors duration-200 hover:scale-105">

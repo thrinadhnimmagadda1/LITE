@@ -139,3 +139,26 @@
   transform: translateY(-3px) scale(1.02);
   box-shadow: 0 25px 50px rgba(0, 0, 0, 0.15);
 }
+
+/* Force light styles for paper cards and abstracts */
+.paper-card {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+.paper-title {
+  color: #334155 !important;
+}
+
+.paper-authors {
+  color: #475569 !important;
+}
+
+.paper-abstract-box {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+.paper-abstract-text {
+  color: #334155 !important;
+}
