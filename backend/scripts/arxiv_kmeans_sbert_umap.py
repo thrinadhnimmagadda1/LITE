@@ -273,8 +273,8 @@ def main():
     logging.info(f"Log file: {log_file}")
     print(f"Logging to file: {log_file}")  # Always print log file location to console
     
-    # Maximum number of papers to fetch
-    MAX_PAPERS = 100
+    # Maximum number of papers to fetch (override via env for low-memory deploys)
+    MAX_PAPERS = int(os.environ.get("LITE_MAX_PAPERS", "100"))
     
     logging.info("Starting arXiv paper extraction")
     logging.info(f"Must include keywords: {must_kw}")
@@ -338,6 +338,15 @@ def main():
         logging.info("No relevant papers found."); return
 
     abstracts = [re.sub(r"\s+", " ", p.title + " " + p.summary).strip() for p in papers]
+
+    # Allow disabling embeddings/clustering for low-memory environments (e.g., Render free tier)
+    disable_embeddings = os.environ.get("LITE_DISABLE_EMBEDDINGS", "0") == "1"
+    if disable_embeddings:
+        best_name = "kmeans_k1"
+        best_labels = [0 for _ in papers]
+        save_csv(papers, best_labels, best_name, OUT_DIR)
+        print("Embeddings disabled (LITE_DISABLE_EMBEDDINGS=1). Saved single-cluster CSV.")
+        return
 
     model = SentenceTransformer("all-mpnet-base-v2")
     X = model.encode(abstracts, show_progress_bar=True, convert_to_numpy=True, normalize_embeddings=True)
