@@ -490,6 +490,12 @@ class SearchTermsAPIView(APIView):
             os.makedirs(mpl_cache_dir, exist_ok=True)
             os.makedirs(hf_cache_dir, exist_ok=True)
             
+            # Optionally skip heavy processing on low-memory environments
+            if os.environ.get("LITE_DISABLE_PROCESSING", "0") == "1":
+                return Response({
+                    'message': 'Search terms updated (processing disabled by LITE_DISABLE_PROCESSING).'
+                })
+
             # Run the arxiv extractor script
             try:
                 env = os.environ.copy()
@@ -509,6 +515,7 @@ class SearchTermsAPIView(APIView):
                 if env.get('RENDER') or env.get('RENDER_SERVICE_ID'):
                     env.setdefault('LITE_DISABLE_EMBEDDINGS', '1')
                     env.setdefault('LITE_MAX_PAPERS', '50')
+                    env.setdefault('LITE_DISABLE_PROCESSING', '1')
                 result = subprocess.run(
                     [sys.executable, str(script_path)],
                     capture_output=True,
