@@ -1,6 +1,6 @@
 services:
   # Frontend Static Site
-  - type: static
+  - type: static_site
     name: lite-frontend
     env: node
     buildCommand: npm install && npm run build
