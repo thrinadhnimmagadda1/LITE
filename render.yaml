@@ -2,7 +2,7 @@ services:
   # Backend Service
   - type: web
     name: lite-backend
-    env: python3
+    env: python
     buildCommand: |
       pip install -r backend/requirements.txt
       python backend/manage.py migrate
