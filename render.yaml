@@ -1,17 +1,4 @@
 services:
-  # Frontend Static Site
-  - type: static_site
-    name: lite-frontend
-    env: node
-    buildCommand: npm install && npm run build
-    staticPublishPath: build
-    envVars:
-      - key: NODE_VERSION
-        value: 18.x
-      - key: REACT_APP_API_URL
-        value: https://lite-backend.onrender.com/api
-    plan: free
-
   # Backend Service
   - type: web
     name: lite-backend
@@ -30,6 +17,19 @@ services:
         generateValue: true
       - key: DJANGO_SETTINGS_MODULE
         value: config.settings
+    plan: free
+
+staticSites:
+  # Frontend Static Site
+  - name: lite-frontend
+    env: node
+    buildCommand: npm install && npm run build
+    staticPublishPath: build
+    envVars:
+      - key: NODE_VERSION
+        value: 18.x
+      - key: REACT_APP_API_URL
+        value: https://lite-backend.onrender.com/api
     plan: free
 
   # Database (if using SQLite, this is just for reference - consider using Render's PostgreSQL instead)
