@@ -893,10 +893,23 @@ class PapersAPIView(APIView):
             # Get all papers data
             papers, error = self.get_papers_data()
             if error and not papers:
-                return Response(
-                    {'error': error}, 
-                    status=status.HTTP_404_NOT_FOUND
-                )
+                return Response({
+                    'pagination': {
+                        'current_page': page,
+                        'page_size': page_size,
+                        'total_pages': 1,
+                        'total_items': 0,
+                        'has_next': False,
+                        'has_previous': False,
+                        'total_available_from_arxiv': None
+                    },
+                    'papers': [],
+                    'clustering': {
+                        'available': False,
+                        'error': error,
+                        'stats': {}
+                    }
+                })
             
             # Get clustering results (for all papers)
             clustering_results, clustering_error = self.get_clustering_results()
