@@ -234,34 +234,21 @@ export const fetchPapers = async ({ page = 1, pageSize = 20 } = {}) => {
     console.log(`Request completed in ${requestDuration}ms`);
     console.log('Response status:', response.status, response.statusText);
     
-    // Clone the response for error handling
-    const responseClone = response.clone();
-    
     // Handle non-OK responses
     if (!response.ok) {
+      let responseText;
       let errorDetails;
       try {
-        // Try to parse the error response as JSON from the clone
-        const errorResponse = await responseClone.text();
+        const errorResponse = await response.text();
         console.log('Error response text:', errorResponse);
+        responseText = errorResponse;
         try {
           errorDetails = JSON.parse(errorResponse);
         } catch (e) {
           errorDetails = errorResponse;
         }
       } catch (e) {
-        console.error('Error parsing error response:', e);
-      }
-      
-      // Try to get more details from the response if possible
-      let responseText;
-      if (!responseText && responseClone) {
-        try {
-          responseText = await responseClone.text();
-          console.error('[fetch] Additional error details from response:', responseText);
-        } catch (e) {
-          console.error('[fetch] Could not read response body:', e);
-        }
+        console.error('[fetch] Could not read response body:', e);
       }
       
       // Create a new error with more context
@@ -273,7 +260,8 @@ export const fetchPapers = async ({ page = 1, pageSize = 20 } = {}) => {
           statusText: response.statusText,
           url: response.url,
           headers: response.headers ? Object.fromEntries(response.headers.entries()) : {},
-          body: responseText
+          body: responseText,
+          details: errorDetails
         };
       }
       
