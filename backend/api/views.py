@@ -503,6 +503,12 @@ class SearchTermsAPIView(APIView):
                 env.setdefault('OMP_NUM_THREADS', '1')
                 env.setdefault('NUMBA_NUM_THREADS', '1')
                 env.setdefault('NUMBA_THREADING_LAYER', 'workqueue')
+                env.setdefault('PYTHONUNBUFFERED', '1')
+
+                # Default to low-memory mode on Render unless explicitly overridden
+                if env.get('RENDER') or env.get('RENDER_SERVICE_ID'):
+                    env.setdefault('LITE_DISABLE_EMBEDDINGS', '1')
+                    env.setdefault('LITE_MAX_PAPERS', '50')
                 result = subprocess.run(
                     [sys.executable, str(script_path)],
                     capture_output=True,
