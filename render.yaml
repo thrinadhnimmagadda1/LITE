@@ -19,20 +19,10 @@ services:
         value: config.settings
     plan: free
 
-staticSites:
-  # Frontend Static Site
-  - name: lite-frontend
-    env: node
-    buildCommand: npm install && npm run build
-    staticPublishPath: build
-    envVars:
-      - key: NODE_VERSION
-        value: 18.x
-      - key: REACT_APP_API_URL
-        value: https://lite-backend.onrender.com/api
-    plan: free
-
-  # Database (if using SQLite, this is just for reference - consider using Render's PostgreSQL instead)
-  # - type: postgres
-  #   name: lite-db
-  #   plan: free
+# NOTE:
+# Render's Blueprint validator is rejecting static site definitions in this file
+# for this workspace. Create the frontend as a separate Render Static Site in
+# the UI with:
+# - Build command: npm install && npm run build
+# - Publish directory: build
+# - Env var: REACT_APP_API_URL=https://lite-backend.onrender.com/api
