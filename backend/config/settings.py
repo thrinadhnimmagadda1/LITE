@@ -29,7 +29,10 @@ DEBUG = True
 ALLOWED_HOSTS = ['*']
 
 # CORS settings
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = [
+    "https://lite-067b.onrender.com",
+]
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
     'accept',
@@ -52,7 +55,11 @@ CORS_ALLOW_METHODS = [
     'POST',
     'PUT',
 ]
-CSRF_TRUSTED_ORIGINS = ['http://localhost:3000', 'http://localhost:3001']
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'https://lite-067b.onrender.com',
+]
 
 
 # Application definition
@@ -81,8 +88,11 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-# CORS settings
-CORS_ALLOW_ALL_ORIGINS = True  # For development only, restrict in production
+# CORS settings (final)
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = [
+    "https://lite-067b.onrender.com",
+]
 CORS_ALLOW_CREDENTIALS = True
 
 ROOT_URLCONF = "config.urls"
