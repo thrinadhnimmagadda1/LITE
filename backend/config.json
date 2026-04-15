@@ -1,8 +1,8 @@
 {
     "must_include": [
-        "BERT"
+        "AL"
     ],
     "optional_keywords": [
-        "data mining"
+        "ML"
     ]
 }
