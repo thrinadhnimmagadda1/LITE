@@ -496,7 +496,8 @@ class SearchTermsAPIView(APIView):
                     'message': 'Search terms updated (processing disabled by LITE_DISABLE_PROCESSING).'
                 })
 
-            # Run the arxiv extractor script
+            # Run the arxiv extractor script asynchronously so the request
+            # returns immediately and the frontend can poll for results.
             try:
                 env = os.environ.copy()
                 env.setdefault('MPLCONFIGDIR', str(mpl_cache_dir))
@@ -516,32 +517,25 @@ class SearchTermsAPIView(APIView):
                     env.setdefault('LITE_DISABLE_EMBEDDINGS', '1')
                     env.setdefault('LITE_MAX_PAPERS', '50')
                     env.setdefault('LITE_DISABLE_PROCESSING', '1')
-                result = subprocess.run(
+
+                # Launch the script in the background (non-blocking)
+                subprocess.Popen(
                     [sys.executable, str(script_path)],
-                    capture_output=True,
-                    text=True,
                     cwd=str(scripts_dir),
-                    env=env
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                 )
-                
-                if result.returncode != 0:
-                    return Response(
-                        {
-                            'message': 'Config updated but script execution failed',
-                            'error': result.stderr
-                        },
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                    )
-                
+
                 return Response({
-                    'message': 'Search terms updated and processing completed successfully',
-                    'output': result.stdout
+                    'message': 'Search started. Processing papers in background — poll /api/papers/ for results.',
+                    'status': 'processing'
                 })
-                
+
             except Exception as e:
                 return Response(
                     {
-                        'message': 'Config updated but script execution failed',
+                        'message': 'Config updated but failed to start background script',
                         'error': str(e)
                     },
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR

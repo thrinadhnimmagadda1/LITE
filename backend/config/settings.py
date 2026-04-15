@@ -31,6 +31,9 @@ ALLOWED_HOSTS = ['*']
 # CORS settings
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3000",
     "https://lite-067b.onrender.com",
 ]
 CORS_ALLOW_CREDENTIALS = True
@@ -91,6 +94,9 @@ MIDDLEWARE = [
 # CORS settings (final)
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3000",
     "https://lite-067b.onrender.com",
 ]
 CORS_ALLOW_CREDENTIALS = True
