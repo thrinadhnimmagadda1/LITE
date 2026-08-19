@@ -240,22 +240,7 @@ src/
 public/
 ```
 
-## Resume Summary
 
-**LITE | React, Django REST Framework, Python, Sentence-BERT, UMAP, HDBSCAN, TF-IDF, Groq API**
-
-Built and optimized a full-stack AI literature discovery platform that processes up to 100 arXiv papers per query, performs semantic topic modeling with UMAP + HDBSCAN, detects outlier papers, and visualizes interpretable research topics in a React dashboard.
-
-## Resume Bullets
-
-- Built a full-stack AI literature discovery platform that searches arXiv, processes up to 100 papers per query, and visualizes papers through an interactive React dashboard.
-- Upgraded the research discovery engine from fixed KMeans clustering to BERTopic-style semantic topic modeling using Sentence-BERT embeddings, UMAP, HDBSCAN, and TF-IDF topic labeling.
-- Improved embedding performance by about 7.4x on a 100-paper benchmark, reducing embedding time from 4.83 seconds to 0.65 seconds with a faster Sentence-BERT model.
-- Re-architected the project from CSV-only storage to a database-backed pipeline with persistent search jobs, paper metadata, topic labels, confidence scores, and paper-topic assignments.
-- Added optional Groq API support to polish automatically generated topic keywords into cleaner human-readable academic topic labels.
-- Detected 14 outlier or mixed-topic papers from a 100-paper benchmark, improving result quality by avoiding forced cluster assignment.
-
-## Known Improvements
 
 - Move production storage from SQLite to PostgreSQL.
 - Add pgvector for persistent embedding search.
