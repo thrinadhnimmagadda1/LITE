@@ -15,7 +15,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
-from .models import Paper, PaperImportLog
+from .models import Paper, PaperImportLog, PaperTopic, SearchJob
 
 
 class ClearSearchTermsView(APIView):
@@ -549,6 +549,46 @@ class SearchTermsAPIView(APIView):
 
 
 class PapersAPIView(APIView):
+    def get_database_papers_data(self):
+        latest_job = SearchJob.objects.filter(status='completed').order_by('-created_at').first()
+        if not latest_job:
+            return []
+
+        assignments = (
+            PaperTopic.objects
+            .filter(search_job=latest_job)
+            .select_related('paper', 'topic')
+            .order_by('-paper__published_date', 'paper__title')
+        )
+        papers = []
+        for assignment in assignments:
+            paper = assignment.paper
+            topic = assignment.topic
+            papers.append({
+                'id': paper.arxiv_id,
+                'title': paper.title,
+                'authors': paper.authors,
+                'abstract': paper.abstract,
+                'published': paper.published_date.isoformat() if paper.published_date else '',
+                'cluster': topic.cluster_id,
+                'cluster_label': topic.label,
+                'topic_label': topic.label,
+                'topic_keywords': topic.keywords,
+                'topic_confidence': assignment.confidence,
+                'url': paper.url,
+                'categories': paper.categories,
+                'Month': paper.month,
+                'Year': paper.year,
+                '_original': {
+                    'source': 'database',
+                    'search_job_id': latest_job.id,
+                    'topic_id': topic.id,
+                    'topic_keywords': topic.keywords,
+                    'topic_confidence': assignment.confidence,
+                }
+            })
+        return papers
+
     def get_clustering_results(self):
         """Helper method to get clustering results from CSV"""
         output_dir = Path(settings.BASE_DIR).parent / 'backend' / 'out'
@@ -619,6 +659,10 @@ class PapersAPIView(APIView):
     
     def get_papers_data(self):
         """Helper method to get papers data from CSV files"""
+        database_papers = self.get_database_papers_data()
+        if database_papers:
+            return database_papers, None
+
         # Define all possible output directories to check
         possible_dirs = [
             Path(settings.BASE_DIR).parent / 'backend' / 'scripts' / 'out',  # Current location
@@ -666,7 +710,7 @@ class PapersAPIView(APIView):
             # If no summary files, look for clustering files
             if not summary_files:
                 print("No summary files found, looking for clustering files")
-                summary_files = list(output_dir.glob('*kmeans*.csv'))
+                summary_files = list(output_dir.glob('*topics*.csv')) + list(output_dir.glob('*kmeans*.csv'))
                 print(f"Found {len(summary_files)} clustering files")
                 
                 # If still no files, look for any CSV files
@@ -743,14 +787,22 @@ class PapersAPIView(APIView):
                             except (ValueError, AttributeError):
                                 pass
                         
+                        cluster_value = row.get('Cluster', row.get('cluster', -1))
+                        topic_label = row.get('Topic Label', row.get('topic_label', None))
+                        topic_keywords = row.get('Topic Keywords', row.get('topic_keywords', ''))
+                        topic_confidence = row.get('Topic Confidence', row.get('topic_confidence', None))
+
                         paper = {
                             'id': paper_id,
                             'title': title,
                             'authors': row.get('Authors', row.get('authors', 'Unknown Author')),
                             'abstract': abstract,
                             'published': published_date,
-                            'cluster': int(row.get('Cluster', row.get('cluster', -1))),
-                            'cluster_label': f"Cluster {row.get('Cluster', row.get('cluster', '?'))}",
+                            'cluster': int(float(cluster_value)),
+                            'cluster_label': str(topic_label).strip() if topic_label and pd.notna(topic_label) else f"Cluster {cluster_value}",
+                            'topic_label': str(topic_label).strip() if topic_label and pd.notna(topic_label) else f"Cluster {cluster_value}",
+                            'topic_keywords': str(topic_keywords).strip() if topic_keywords and pd.notna(topic_keywords) else '',
+                            'topic_confidence': float(topic_confidence) if topic_confidence and pd.notna(topic_confidence) else None,
                             'url': f"https://arxiv.org/abs/{paper_id}" if 'id' in row or 'ID' in row else '#',
                             'categories': row.get('Categories', row.get('categories', '')),
                             'Month': month,

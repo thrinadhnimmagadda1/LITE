@@ -69,5 +69,6 @@ db.sqlite3-journal
 # Backend specific
 /backend/scripts/out/*
 /backend/scripts/logs/*
+/backend/.cache/
 !/backend/scripts/out/.gitkeep
 !/backend/scripts/logs/.gitkeep

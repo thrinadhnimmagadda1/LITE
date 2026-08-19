@@ -4,25 +4,35 @@ import csv
 import json
 import logging
 import glob
+import sys
 from datetime import datetime
 import warnings
 import time
 import random
 from datetime import datetime, timedelta
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional, Set
 import requests
 import arxiv
 import numpy as np
 import matplotlib.pyplot as plt
+from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
 from sklearn.metrics import silhouette_score
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
+from sklearn.feature_extraction.text import TfidfVectorizer
 import umap
 import hdbscan                     
 
 warnings.filterwarnings("ignore", category=UserWarning, module="sentence_transformers")
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+BACKEND_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, os.pardir))
+load_dotenv(os.path.join(BACKEND_DIR, ".env"))
+
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
 
 # The function loads the configuration and adds dynamic date range
 def load_config() -> dict:
@@ -70,18 +80,52 @@ def format_date_range(start: Optional[str], end: Optional[str]) -> Optional[str]
 
 # The function generates search queries with the primary and secondary focus keyword lists by first listing individually, then in combinations
 # It returns a list of queries
-def generate_queries(must: List[str], opt: List[str], start=None, end=None) -> List[str]:
-    # Formatting
-    m_str  = " OR ".join(f'"{kw}"' for kw in must)
-    opt_str= " OR ".join(f'"{kw}"' for kw in opt)
+def clean_keywords(keywords: List[str]) -> List[str]:
+    seen: Set[str] = set()
+    cleaned = []
+    for keyword in keywords:
+        keyword = re.sub(r"\s+", " ", str(keyword).strip().lower())
+        if keyword and keyword not in seen:
+            seen.add(keyword)
+            cleaned.append(keyword)
+    return cleaned
 
-    queries = [f"cat:cs.AI AND ({m_str})", f"cat:cs.AI AND ({opt_str})"]
-    for i in range(0, len(opt), 2):
-        pair = " OR ".join(f'"{kw}"' for kw in opt[i:i+2])
-        queries.append(f"cat:cs.AI AND ({m_str}) AND ({pair})")
+
+def paper_key(paper) -> str:
+    return getattr(paper, "entry_id", "") or getattr(paper, "title", "").strip().lower()
+
+
+def paper_arxiv_id(paper) -> str:
+    entry_id = getattr(paper, "entry_id", "") or ""
+    match = re.search(r"arxiv\.org/(?:abs|pdf)/([^v?#]+)", entry_id)
+    if match:
+        return match.group(1).replace(".pdf", "")
+    return paper_key(paper)[:100]
+
+
+def generate_queries(must: List[str], opt: List[str], start=None, end=None) -> List[str]:
+    queries = []
+
+    if must:
+        m_str = " OR ".join(f'"{kw}"' for kw in must)
+        queries.append(f"cat:cs.AI AND ({m_str})")
+
+    if opt:
+        opt_str = " OR ".join(f'"{kw}"' for kw in opt)
+        queries.append(f"cat:cs.AI AND ({opt_str})")
+
+    if must and opt:
+        m_str = " OR ".join(f'"{kw}"' for kw in must)
+        for i in range(0, len(opt), 2):
+            pair = " OR ".join(f'"{kw}"' for kw in opt[i:i+2])
+            queries.append(f"cat:cs.AI AND ({m_str}) AND ({pair})")
+
+    if not queries:
+        queries.append("cat:cs.AI")
+
     if (dr := format_date_range(start, end)):
         queries = [f"{q} AND submittedDate:{dr}" for q in queries]
-    return queries
+    return list(dict.fromkeys(queries))
 
 # This function computes the silhouette score
 def cosine_silhouette(X: np.ndarray, labels: np.ndarray) -> Optional[float]:
@@ -90,17 +134,169 @@ def cosine_silhouette(X: np.ndarray, labels: np.ndarray) -> Optional[float]:
     return None
 
 
-def extract_keywords(abstracts: List[str], labels: np.ndarray, n_kw=3) -> dict:
-    from sklearn.feature_extraction.text import TfidfVectorizer
+def extract_keywords(abstracts: List[str], labels: np.ndarray, n_kw=4) -> dict:
     out = {}
-    for cid in set(labels):
+    for cid in sorted(set(labels)):
+        if cid == -1:
+            out[cid] = ["outlier"]
+            continue
         docs = [abstracts[i] for i, l in enumerate(labels) if l == cid]
-        vect = TfidfVectorizer(stop_words="english", max_features=100)
+        if not docs:
+            out[cid] = []
+            continue
+        vect = TfidfVectorizer(stop_words="english", max_features=200, ngram_range=(1, 2))
         tfidf = vect.fit_transform(docs)
         scores = tfidf.sum(axis=0).A1
         idxs = scores.argsort()[-n_kw:][::-1]
         out[cid] = [vect.get_feature_names_out()[i] for i in idxs]
     return out
+
+
+def title_from_keywords(keywords: List[str]) -> str:
+    if not keywords or keywords == ["outlier"]:
+        return "Outlier / Mixed Topic"
+    words = []
+    for keyword in keywords[:3]:
+        for part in keyword.split():
+            if part not in words:
+                words.append(part)
+    return " ".join(word.capitalize() for word in words[:4])
+
+
+def polish_topic_labels_with_groq(topic_keywords: dict) -> dict:
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        return {}
+
+
+def persist_results_to_database(
+    papers,
+    labels,
+    topic_labels,
+    topic_keywords,
+    probabilities,
+    cfg,
+    metrics,
+    processing_seconds,
+):
+    try:
+        os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+        import django
+        django.setup()
+        from django.db import transaction
+        from api.models import Paper, PaperTopic, SearchJob, Topic
+    except Exception as exc:
+        logging.warning("Database persistence skipped: %s", exc)
+        return None
+
+    must_query = ", ".join(cfg.get("must_include", []))
+    optional_query = ", ".join(cfg.get("optional_keywords", []))
+
+    with transaction.atomic():
+        search_job = SearchJob.objects.create(
+            query=must_query,
+            optional_keywords=optional_query,
+            status="completed",
+            papers_scanned=metrics.get("total_seen", 0),
+            papers_matched=len(papers),
+            duplicates_skipped=metrics.get("skipped_duplicates", 0),
+            irrelevant_skipped=metrics.get("skipped_irrelevant", 0),
+            topics_found=len(set(labels) - {-1}),
+            outliers_found=int(np.sum(np.array(labels) == -1)),
+            processing_seconds=processing_seconds,
+            metadata={
+                "embedding_model": os.environ.get("LITE_EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
+                "clustering_mode": os.environ.get("LITE_CLUSTERING_MODE", "hdbscan"),
+            },
+        )
+
+        topic_records = {}
+        for cluster_id in sorted(set(labels)):
+            keywords = topic_keywords.get(cluster_id, [])
+            topic_records[cluster_id] = Topic.objects.create(
+                search_job=search_job,
+                cluster_id=int(cluster_id),
+                label=topic_labels.get(cluster_id) or title_from_keywords(keywords),
+                keywords="; ".join(keywords),
+                paper_count=int(np.sum(np.array(labels) == cluster_id)),
+                is_outlier=cluster_id == -1,
+            )
+
+        for index, (paper, label) in enumerate(zip(papers, labels)):
+            published = getattr(paper, "published", None)
+            arxiv_id = paper_arxiv_id(paper)
+            author_names = "; ".join([str(a.name) for a in paper.authors]) if paper.authors else ""
+            categories = getattr(paper, "categories", None) or getattr(paper, "primary_category", "") or ""
+            confidence = probabilities[index] if probabilities is not None and index < len(probabilities) else None
+            paper_obj, _ = Paper.objects.update_or_create(
+                arxiv_id=arxiv_id,
+                defaults={
+                    "title": paper.title.strip(),
+                    "abstract": paper.summary.strip(),
+                    "authors": author_names,
+                    "published_date": published.date() if published else None,
+                    "year": published.year if published else None,
+                    "month": published.strftime("%B") if published else None,
+                    "categories": categories,
+                    "url": getattr(paper, "entry_id", "") or f"https://arxiv.org/abs/{arxiv_id}",
+                    "cluster": int(label),
+                    "metadata": {
+                        "topic_label": topic_records[label].label,
+                        "topic_keywords": topic_records[label].keywords,
+                        "search_job_id": search_job.id,
+                    },
+                },
+            )
+            PaperTopic.objects.update_or_create(
+                paper=paper_obj,
+                search_job=search_job,
+                defaults={
+                    "topic": topic_records[label],
+                    "confidence": float(confidence) if confidence is not None else None,
+                },
+            )
+
+    logging.info("Saved %s papers and %s topics to database for SearchJob %s", len(papers), len(topic_records), search_job.id)
+    return search_job.id
+
+    topics = {
+        str(topic_id): keywords
+        for topic_id, keywords in topic_keywords.items()
+        if topic_id != -1 and keywords
+    }
+    if not topics:
+        return {}
+
+    prompt = (
+        "Create short 2-5 word academic research topic labels from these keyword lists. "
+        "Return only compact JSON where keys are topic IDs and values are labels.\n"
+        f"{json.dumps(topics)}"
+    )
+
+    try:
+        response = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": os.environ.get("GROQ_TOPIC_MODEL", "llama-3.1-8b-instant"),
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.2,
+                "max_tokens": 300,
+            },
+            timeout=20,
+        )
+        response.raise_for_status()
+        content = response.json()["choices"][0]["message"]["content"].strip()
+        match = re.search(r"\{.*\}", content, re.S)
+        if not match:
+            return {}
+        return {int(k): str(v) for k, v in json.loads(match.group(0)).items()}
+    except Exception as exc:
+        logging.warning("Groq topic labeling skipped: %s", exc)
+        return {}
 
 # This function runs KMeans clustering from cluster numbers 2-10, returning the cluster number with the highest silhouette score
 def run_clustering_models(X: np.ndarray) -> Tuple[str, np.ndarray, float]:
@@ -119,6 +315,25 @@ def run_clustering_models(X: np.ndarray) -> Tuple[str, np.ndarray, float]:
     if best_labels is None:
         raise ValueError("No valid clustering found (silhouette score could not be computed for any k)")
     return f"kmeans_k{best_k}", best_labels, best_score
+
+
+def run_topic_model(X: np.ndarray) -> Tuple[str, np.ndarray, float, Optional[np.ndarray]]:
+    min_cluster_size = int(os.environ.get("LITE_MIN_TOPIC_SIZE", "5"))
+    min_samples = int(os.environ.get("LITE_MIN_TOPIC_SAMPLES", "2"))
+    clusterer = hdbscan.HDBSCAN(
+        min_cluster_size=max(2, min_cluster_size),
+        min_samples=max(1, min_samples),
+        metric="euclidean",
+        prediction_data=True,
+    )
+    labels = clusterer.fit_predict(X)
+    topic_count = len(set(labels) - {-1})
+    if topic_count >= 2:
+        score = cosine_silhouette(X[labels != -1], labels[labels != -1]) or 0
+    else:
+        score = 0
+    probabilities = getattr(clusterer, "probabilities_", None)
+    return f"hdbscan_topics_{topic_count}", labels, score, probabilities
 
 # This function checks the paper's title and abstract for required or optional keywords
 def is_relevant(paper, must: List[str], opt: List[str]) -> bool:
@@ -168,7 +383,7 @@ def is_relevant(paper, must: List[str], opt: List[str]) -> bool:
     return is_relevant
 
 # This function saves a csv file with columns of Title, Abstract, Authors, Month, Year, and Cluster
-def save_csv(papers, labels, name, out_dir):
+def save_csv(papers, labels, name, out_dir, topic_labels=None, topic_keywords=None, probabilities=None):
     # Month names mapping
     MONTH_NAMES = [
         "January", "February", "March", "April", "May", "June",
@@ -189,8 +404,8 @@ def save_csv(papers, labels, name, out_dir):
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         # Add Month and Year columns to the header
-        writer.writerow(["Title", "Abstract", "Authors", "Month", "Year", "Cluster"])
-        for paper, lbl in zip(papers, labels):
+        writer.writerow(["Title", "Abstract", "Authors", "Month", "Year", "Cluster", "Topic Label", "Topic Keywords", "Topic Confidence"])
+        for index, (paper, lbl) in enumerate(zip(papers, labels)):
             author_names = "; ".join([str(a.name) for a in paper.authors]) if paper.authors else "N/A"
             # Extract month and year from the published date
             month = ""
@@ -200,22 +415,30 @@ def save_csv(papers, labels, name, out_dir):
                 month = MONTH_NAMES[month_num - 1] if 1 <= month_num <= 12 else str(month_num)
                 year = paper.published.year
                 
+            keywords = topic_keywords.get(lbl, []) if topic_keywords else []
+            topic_label = topic_labels.get(lbl) if topic_labels else None
+            confidence = probabilities[index] if probabilities is not None and index < len(probabilities) else ""
+
             writer.writerow([
                 paper.title.strip(), 
                 paper.summary.strip(), 
                 author_names,
                 month,
                 year,
-                lbl
+                lbl,
+                topic_label or title_from_keywords(keywords),
+                "; ".join(keywords),
+                f"{confidence:.3f}" if confidence != "" else ""
             ])
     logging.info("CSV with authors, month names, and year saved → %s", path)
 
 
 def main():
+    started_at = time.perf_counter()
     # Load configuration
     cfg = load_config()
-    must_kw = [kw.lower() for kw in cfg.get("must_include", [])]
-    opt_kw = [kw.lower() for kw in cfg.get("optional_keywords", [])]
+    must_kw = clean_keywords(cfg.get("must_include", []))
+    opt_kw = clean_keywords(cfg.get("optional_keywords", []))
     start_d, end_d = cfg.get("start_date"), cfg.get("end_date")
     
     # Set up directories
@@ -290,6 +513,10 @@ def main():
         num_retries=3    # Number of retries for failed requests
     )
     papers = []
+    seen_papers: Set[str] = set()
+    total_seen = 0
+    skipped_duplicates = 0
+    skipped_irrelevant = 0
     
     for q in generate_queries(must_kw, opt_kw, start_d, end_d):
         if len(papers) >= MAX_PAPERS:
@@ -312,11 +539,22 @@ def main():
             for result in client.results(search):
                 if len(papers) >= MAX_PAPERS:
                     break
-                    
+
+                total_seen += 1
+                key = paper_key(result)
+                if key in seen_papers:
+                    skipped_duplicates += 1
+                    continue
+                seen_papers.add(key)
+
+                if not is_relevant(result, must_kw, opt_kw):
+                    skipped_irrelevant += 1
+                    continue
+
                 papers.append(result)
                 batch_count += 1
                 if batch_count % 10 == 0:  # Log more frequently for better progress tracking
-                    logging.info(f"Fetched {len(papers)}/{MAX_PAPERS} papers (current query: {q})")
+                    logging.info(f"Collected {len(papers)}/{MAX_PAPERS} relevant unique papers (current query: {q})")
                     
                 if len(papers) >= MAX_PAPERS:
                     logging.info(f"Reached maximum paper limit of {MAX_PAPERS}")
@@ -332,8 +570,14 @@ def main():
             logging.error(f"Unexpected error for query '{q}': {exc}")
             continue
 
-    papers = [p for p in papers if is_relevant(p, must_kw, opt_kw)]
     papers.sort(key=lambda p: p.published, reverse=True)
+    logging.info(
+        "Search quality filter: scanned=%s, relevant_unique=%s, duplicates_skipped=%s, irrelevant_skipped=%s",
+        total_seen,
+        len(papers),
+        skipped_duplicates,
+        skipped_irrelevant,
+    )
     if not papers:
         logging.info("No relevant papers found."); return
 
@@ -342,21 +586,57 @@ def main():
     # Allow disabling embeddings/clustering for low-memory environments (e.g., Render free tier)
     disable_embeddings = os.environ.get("LITE_DISABLE_EMBEDDINGS", "0") == "1"
     if disable_embeddings:
-        best_name = "kmeans_k1"
+        best_name = "topics_disabled_k1"
         best_labels = [0 for _ in papers]
-        save_csv(papers, best_labels, best_name, OUT_DIR)
+        topic_keywords = extract_keywords(abstracts, np.array(best_labels))
+        topic_labels = {cid: title_from_keywords(words) for cid, words in topic_keywords.items()}
+        save_csv(papers, best_labels, best_name, OUT_DIR, topic_labels, topic_keywords)
         print("Embeddings disabled (LITE_DISABLE_EMBEDDINGS=1). Saved single-cluster CSV.")
         return
 
-    model = SentenceTransformer("all-mpnet-base-v2")
+    embedding_model = os.environ.get("LITE_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+    logging.info("Embedding model: %s", embedding_model)
+    model = SentenceTransformer(embedding_model)
     X = model.encode(abstracts, show_progress_bar=True, convert_to_numpy=True, normalize_embeddings=True)
 
     X_umap = umap.UMAP(n_components=20, metric='cosine', random_state=42).fit_transform(X)
 
-    best_name, best_labels, best_score = run_clustering_models(X_umap)
-    save_csv(papers, best_labels, best_name, OUT_DIR)
+    clustering_mode = os.environ.get("LITE_CLUSTERING_MODE", "hdbscan").lower()
+    if clustering_mode == "kmeans":
+        best_name, best_labels, best_score = run_clustering_models(X_umap)
+        probabilities = None
+    else:
+        best_name, best_labels, best_score, probabilities = run_topic_model(X_umap)
+        if len(set(best_labels) - {-1}) < 2:
+            logging.info("HDBSCAN found fewer than 2 topics; falling back to KMeans.")
+            best_name, best_labels, best_score = run_clustering_models(X_umap)
+            probabilities = None
 
-    print(f"Best cluster number: {best_name.split('_k')[-1]}, silhouette score: {best_score:.3f}")
+    topic_keywords = extract_keywords(abstracts, np.array(best_labels))
+    groq_labels = polish_topic_labels_with_groq(topic_keywords)
+    topic_labels = {
+        cid: groq_labels.get(cid) or title_from_keywords(words)
+        for cid, words in topic_keywords.items()
+    }
+    save_csv(papers, best_labels, best_name, OUT_DIR, topic_labels, topic_keywords, probabilities)
+    persist_results_to_database(
+        papers,
+        np.array(best_labels),
+        topic_labels,
+        topic_keywords,
+        probabilities,
+        cfg,
+        {
+            "total_seen": total_seen,
+            "skipped_duplicates": skipped_duplicates,
+            "skipped_irrelevant": skipped_irrelevant,
+        },
+        time.perf_counter() - started_at,
+    )
+
+    topic_count = len(set(best_labels) - {-1})
+    outlier_count = int(np.sum(np.array(best_labels) == -1))
+    print(f"Topic model: {best_name}, topics: {topic_count}, outliers: {outlier_count}, silhouette score: {best_score:.3f}")
 
 
 if __name__ == "__main__":

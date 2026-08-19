@@ -1,9 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Skeleton, SkeletonCard } from './Skeleton';
 
 const ListSection = ({ items = [], isLoading = false, onCategorySelect, onItemClick }) => {
-  const navigate = useNavigate();
   const [expandedId, setExpandedId] = useState(null);
 
   const toggleAbstract = (e, itemId) => {
@@ -27,7 +25,6 @@ const ListSection = ({ items = [], isLoading = false, onCategorySelect, onItemCl
     
     if (!isAbstractToggle) {
       onItemClick?.(itemId);
-      navigate(`/item/${itemId}`);
     }
   };
 
@@ -86,13 +83,23 @@ const ListSection = ({ items = [], isLoading = false, onCategorySelect, onItemCl
     const line1 = getItemProperty(item, 'line1');
     const line2 = getItemProperty(item, 'line2');
     const technologies = Array.isArray(item.technologies) ? item.technologies : [];
+    const topicLabel = item.topicLabel || item.topic_label || item.Cluster;
+    const topicKeywords = String(item.topicKeywords || item.topic_keywords || '')
+      .split(';')
+      .map(keyword => keyword.trim())
+      .filter(Boolean)
+      .slice(0, 5);
+    const confidenceValue = item.topicConfidence ?? item.topic_confidence;
+    const confidence = typeof confidenceValue === 'number'
+      ? `${Math.round(confidenceValue * 100)}%`
+      : null;
     const hasAbstract = Boolean(item.abstract || item.line3);
     const isExpanded = expandedId === itemId;
     
     return (
       <div 
         key={itemId}
-        className="paper-card bg-white rounded-lg shadow overflow-hidden hover:shadow-md transition-shadow duration-200"
+        className="paper-card bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden hover:shadow-md hover:border-slate-300 transition-all duration-200"
         onClick={(e) => handleItemClick(e, itemId)}
         role="button"
         tabIndex={0}
@@ -101,16 +108,25 @@ const ListSection = ({ items = [], isLoading = false, onCategorySelect, onItemCl
       >
         <div className="p-6">
           <div className="flex flex-col space-y-3">
-            <div className="flex justify-between items-start">
+            <div className="flex flex-col gap-3 md:flex-row md:justify-between md:items-start">
               <h3
-                className="paper-title text-lg font-semibold hover:text-indigo-600 transition-colors"
+                className="paper-title text-lg font-semibold leading-snug hover:text-indigo-600 transition-colors"
                 style={{ color: '#334155' }}
               >
                 {title}
               </h3>
-              {/* <span className="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap ml-4">
-                {formatDate(line2)}
-              </span> */}
+              {topicLabel && (
+                <div className="flex shrink-0 flex-wrap items-center gap-2 md:justify-end">
+                  <span className="inline-flex items-center rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                    {topicLabel}
+                  </span>
+                  {confidence && (
+                    <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+                      {confidence}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           
             {line1 && (
@@ -119,14 +135,28 @@ const ListSection = ({ items = [], isLoading = false, onCategorySelect, onItemCl
               </p>
             )}
 
-            {technologies.length > 0 && (
+            {topicKeywords.length > 0 ? (
               <div className="flex flex-wrap gap-2 mt-2">
-                {technologies.map((tech, techIndex) => {
+                {topicKeywords.map((tech, techIndex) => {
                   const techText = String(tech || '').trim();
                   return techText ? (
                     <span
                       key={`tech-${itemId}-${techIndex}`}
-                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
+                      className="inline-flex items-center rounded-md bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 ring-1 ring-sky-100"
+                    >
+                      {techText}
+                    </span>
+                  ) : null;
+                })}
+              </div>
+            ) : technologies.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-2">
+                {technologies.slice(0, 5).map((tech, techIndex) => {
+                  const techText = String(tech || '').trim();
+                  return techText ? (
+                    <span
+                      key={`tech-${itemId}-${techIndex}`}
+                      className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700"
                     >
                       {techText}
                     </span>

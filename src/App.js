@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Navigate, Routes, Route } from 'react-router-dom';
 import ReactDOM from 'react-dom';
 import { fetchPapers, updateSearchTerms } from './services/api';
 import { API_ENDPOINTS } from './config';
@@ -449,7 +449,10 @@ function App() {
             line4: paper.url || paper.URL || '#',
             categories: categories,
             technologies: categories,
-            Cluster: paper.cluster_label || paper.Cluster || paper.cluster || 'Uncategorized',
+            Cluster: paper.topic_label || paper.cluster_label || paper.Cluster || paper.cluster || 'Uncategorized',
+            topicLabel: paper.topic_label || paper.cluster_label || null,
+            topicKeywords: paper.topic_keywords || '',
+            topicConfidence: paper.topic_confidence ?? null,
             ...(paper.x !== undefined && { x: paper.x }),
             ...(paper.y !== undefined && { y: paper.y }),
             _original: paper,
@@ -1188,6 +1191,7 @@ function AppWrapper() {
   return (
     <LogsProvider>
       <Routes>
+        <Route path="/item/:id" element={<Navigate to="/" replace />} />
         <Route path="/*" element={<App />} />
       </Routes>
     </LogsProvider>

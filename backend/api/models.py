@@ -53,6 +53,72 @@ class Paper(models.Model):
         return stats
 
 
+class SearchJob(models.Model):
+    """Track one user-triggered literature search and processing run."""
+    query = models.TextField()
+    optional_keywords = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=[
+        ('queued', 'Queued'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ], default='queued', db_index=True)
+    papers_scanned = models.IntegerField(default=0)
+    papers_matched = models.IntegerField(default=0)
+    duplicates_skipped = models.IntegerField(default=0)
+    irrelevant_skipped = models.IntegerField(default=0)
+    topics_found = models.IntegerField(default=0)
+    outliers_found = models.IntegerField(default=0)
+    processing_seconds = models.FloatField(null=True, blank=True)
+    error_message = models.TextField(blank=True)
+    metadata = JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.query} ({self.status})"
+
+
+class Topic(models.Model):
+    """Semantic topic discovered for a search job."""
+    search_job = models.ForeignKey(SearchJob, on_delete=models.CASCADE, related_name='topics')
+    cluster_id = models.IntegerField(db_index=True)
+    label = models.CharField(max_length=160)
+    keywords = models.TextField(blank=True)
+    paper_count = models.IntegerField(default=0)
+    is_outlier = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('search_job', 'cluster_id')
+        ordering = ['is_outlier', '-paper_count', 'label']
+
+    def __str__(self):
+        return self.label
+
+
+class PaperTopic(models.Model):
+    """Join table between papers and discovered topics."""
+    paper = models.ForeignKey(Paper, on_delete=models.CASCADE, related_name='topic_assignments')
+    topic = models.ForeignKey(Topic, on_delete=models.CASCADE, related_name='paper_assignments')
+    search_job = models.ForeignKey(SearchJob, on_delete=models.CASCADE, related_name='paper_topics')
+    confidence = models.FloatField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('paper', 'search_job')
+        indexes = [
+            models.Index(fields=['search_job', 'confidence']),
+            models.Index(fields=['topic', 'confidence']),
+        ]
+
+    def __str__(self):
+        return f"{self.paper_id} -> {self.topic_id}"
+
+
 class PaperImportLog(models.Model):
     """Track CSV imports and updates."""
     filename = models.CharField(max_length=255)

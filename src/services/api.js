@@ -110,7 +110,7 @@ const processPapersData = (papersData) => {
       const abstract = extractAbstract(paper);
       const url = paper.URL || paper.url || paper.pdf_url || (paper.arxiv_id ? `https://arxiv.org/abs/${paper.arxiv_id}` : '#');
       const categories = paper.Categories || paper.categories || '';
-      const cluster = paper.Cluster || paper.cluster || 'Uncategorized';
+      const cluster = paper.topic_label || paper.cluster_label || paper.Cluster || paper.cluster || 'Uncategorized';
       
       // Debug log the original paper data
       console.log('Processing paper - Original data:', {
@@ -135,6 +135,9 @@ const processPapersData = (papersData) => {
         url: url,
         categories: categories,
         cluster: cluster,
+        topic_label: paper.topic_label || paper.cluster_label || null,
+        topic_keywords: paper.topic_keywords || '',
+        topic_confidence: paper.topic_confidence ?? null,
         // Include Month and Year if they exist in the original data
         ...(paper.Month && { Month: paper.Month }),
         ...(paper.Year && { Year: paper.Year }),

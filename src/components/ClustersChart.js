@@ -24,7 +24,7 @@ const ClustersChart = ({ papers = [], onPaperSelect, onCategorySelect, selectedC
   const [chartData, setChartData] = useState({
     labels: [],
     datasets: [{
-      label: 'Papers per Cluster',
+      label: 'Papers per Topic',
       data: [],
       backgroundColor: 'rgba(54, 162, 235, 0.6)',
       borderColor: 'rgba(54, 162, 235, 1)',
@@ -55,7 +55,7 @@ const ClustersChart = ({ papers = [], onPaperSelect, onCategorySelect, selectedC
         setChartData({
           labels: [],
           datasets: [{
-            label: 'Papers per Cluster',
+            label: 'Papers per Topic',
             data: [],
             backgroundColor: [],
             borderColor: [],
@@ -102,7 +102,7 @@ const ClustersChart = ({ papers = [], onPaperSelect, onCategorySelect, selectedC
   if (loading) {
     return (
       <div className="chart-container" style={{ padding: '20px', textAlign: 'center' }}>
-        <h2>Paper Clusters</h2>
+        <h2>Research Topics</h2>
         <p>Loading cluster data...</p>
       </div>
     );
@@ -111,7 +111,7 @@ const ClustersChart = ({ papers = [], onPaperSelect, onCategorySelect, selectedC
   if (error) {
     return (
       <div className="chart-container" style={{ padding: '20px', textAlign: 'center' }}>
-        <h2>Paper Clusters</h2>
+        <h2>Research Topics</h2>
         <p style={{ color: 'red' }}>{error}</p>
       </div>
     );
@@ -119,7 +119,7 @@ const ClustersChart = ({ papers = [], onPaperSelect, onCategorySelect, selectedC
 
   return (
     <div className="chart-container" style={{ padding: '20px', height: '400px' }}>
-      <h2 style={{ marginBottom: '20px', textAlign: 'center' }}>Paper Clusters</h2>
+      <h2 style={{ marginBottom: '20px', textAlign: 'center' }}>Research Topics</h2>
       {chartData.labels.length > 0 ? (
         <div style={{ height: 'calc(100% - 60px)' }}>
           <Bar
@@ -133,7 +133,7 @@ const ClustersChart = ({ papers = [], onPaperSelect, onCategorySelect, selectedC
                 },
                 title: {
                   display: true,
-                  text: 'Number of Papers per Cluster',
+                  text: 'Number of Papers per Topic',
                   font: {
                     size: 16,
                     weight: 'bold'
@@ -176,7 +176,7 @@ const ClustersChart = ({ papers = [], onPaperSelect, onCategorySelect, selectedC
                 x: {
                   title: {
                     display: true,
-                    text: 'Cluster Groups',
+                    text: 'Discovered Topics',
                     font: {
                       weight: 'bold'
                     }
@@ -195,7 +195,7 @@ const ClustersChart = ({ papers = [], onPaperSelect, onCategorySelect, selectedC
         </div>
       ) : (
         <div style={{ textAlign: 'center', padding: '20px' }}>
-          <p>No cluster data available. Try performing a search first.</p>
+          <p>No topic data available. Try performing a search first.</p>
         </div>
       )}
     </div>
