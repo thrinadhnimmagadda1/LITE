@@ -1,188 +1,266 @@
-# LITE — Literature Intelligence, Timeline, and Exploration
+# LITE - Literature Intelligence, Timeline, and Exploration
 
-Full‑stack app to search arXiv, cluster papers, and visualize trends.
+LITE is a full-stack AI literature discovery platform for searching, organizing, and exploring arXiv research papers. A user enters a research topic, and the system fetches recent arXiv papers, filters duplicates and irrelevant results, creates semantic embeddings from titles and abstracts, discovers natural research topics, and displays the results in an interactive React dashboard.
 
-### Stack
-- Backend: Django + Django REST Framework (Python 3.12)
-- Frontend: React (CRA), Chart.js
-- Data: CSVs produced by `backend/scripts/arxiv_kmeans_sbert_umap.py`
+The project was upgraded from a CSV-only workflow into a database-backed AI pipeline with persistent search jobs, paper metadata, topic labels, confidence scores, and paper-topic assignments.
 
----
+## Highlights
 
-## 1) Prerequisites
-- Python 3.12
-- Node.js 18+ and npm 9+
-- macOS/Linux or WSL (Windows)
+- Processes up to 100 arXiv papers per query.
+- Uses Sentence-BERT embeddings to compare papers by meaning instead of only keywords.
+- Uses UMAP + HDBSCAN for semantic topic modeling and outlier detection.
+- Generates topic keywords with TF-IDF.
+- Optionally uses Groq to polish topic labels into human-readable research themes.
+- Stores results in Django database tables instead of relying only on CSV files.
+- Visualizes discovered topics, publication trends, paper metadata, abstracts, keywords, and confidence scores in React.
 
-Optional: direnv or dotenv if you prefer environment files.
+## Measured Results
 
----
+The current local benchmark was run on an existing 100-paper arXiv output.
 
-## 2) Backend — Django API
+| Metric | Result |
+| --- | --- |
+| Papers processed per query | Up to 100 |
+| Papers imported into database | 100 |
+| Paper-topic assignments | 100 |
+| Natural topics discovered | 4 |
+| Outlier / mixed-topic papers detected | 14 |
+| Old embedding time for 100 papers | 4.83 seconds |
+| New embedding time for 100 papers | 0.65 seconds |
+| Embedding speed improvement | About 7.4x faster |
+| Local topic-modeling benchmark | About 6.16 seconds for 100 papers |
 
-All commands are relative to the repo root unless stated.
+## Tech Stack
 
-1. Create and activate virtualenv
-```bash
-python3 -m venv backend/venv
-source backend/venv/bin/activate
+**Frontend**
+
+- React
+- React Router
+- Chart.js / react-chartjs-2
+- Tailwind CSS
+
+**Backend**
+
+- Django
+- Django REST Framework
+- SQLite for local development
+- PostgreSQL-ready architecture for production
+
+**AI / NLP Pipeline**
+
+- arXiv API
+- Sentence-Transformers
+- UMAP
+- HDBSCAN
+- KMeans fallback
+- TF-IDF topic keyword extraction
+- Optional Groq API topic-label polishing
+
+## Architecture
+
+```text
+React dashboard
+  -> Django REST API
+  -> SearchJob created
+  -> arXiv extraction pipeline
+  -> keyword cleaning + duplicate filtering
+  -> Sentence-BERT embeddings
+  -> UMAP dimensionality reduction
+  -> HDBSCAN topic discovery
+  -> TF-IDF topic keywords
+  -> optional Groq label polishing
+  -> Django database storage
+  -> API returns papers, topics, confidence scores, and pagination
 ```
 
-2. Install dependencies
+CSV output is still kept as a fallback/export format, but the primary application flow now uses structured database records.
+
+## Database Design
+
+The upgraded backend uses four core data models:
+
+| Model | Purpose |
+| --- | --- |
+| `SearchJob` | Tracks each user search, processing status, metrics, topic count, outliers, and runtime |
+| `Paper` | Stores arXiv paper metadata such as title, abstract, authors, date, URL, and categories |
+| `Topic` | Stores discovered topic labels, keywords, cluster IDs, paper counts, and outlier status |
+| `PaperTopic` | Connects papers to topics with confidence scores for each search job |
+
+This design makes the project more production-ready than a CSV-only workflow because it supports persistent search history, deduplication, topic tracking, and scalable API retrieval.
+
+## Why HDBSCAN Instead of Only KMeans?
+
+The original pipeline used KMeans clustering. KMeans is simple and useful, but it forces every paper into a cluster and requires selecting a fixed number of clusters.
+
+The upgraded pipeline uses HDBSCAN by default because it:
+
+- Discovers the number of topics automatically.
+- Handles uneven topic sizes better.
+- Detects outlier or mixed-topic papers.
+- Avoids forcing weak matches into misleading clusters.
+- Produces a stronger topic-modeling workflow for research discovery.
+
+KMeans is still available as a fallback when HDBSCAN cannot find enough natural topics.
+
+## Groq Topic Labeling
+
+Groq is optional. The app works without it by generating topic labels from TF-IDF keywords. If `GROQ_API_KEY` is available, the backend asks Groq to rewrite keyword groups into cleaner academic topic names.
+
+Create a private backend environment file:
+
 ```bash
-pip install -r backend/requirements.txt
+backend/.env
 ```
 
-3. Apply migrations
+Add:
+
 ```bash
-python backend/manage.py migrate
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_TOPIC_MODEL=llama-3.1-8b-instant
 ```
 
-4. Run the server
+Do not commit `backend/.env` to GitHub. Use `backend/.env.example` only for placeholder values.
+
+## API Endpoints
+
+| Endpoint | Method | Description |
+| --- | --- | --- |
+| `/api/search-terms/` | POST | Saves a search query and starts background processing |
+| `/api/search-terms/` | GET | Reads current search terms |
+| `/api/search-terms/clear/` | GET | Clears current search terms |
+| `/api/papers/` | GET | Returns paginated papers and topic metadata |
+| `/api/papers/?get_latest_log_info=true` | GET | Returns latest arXiv extraction count from logs |
+| `/api/papers/all-for-clustering/` | GET | Returns all available papers for visualization |
+
+## Local Setup
+
+### Prerequisites
+
+- Python 3.12+
+- Node.js 18+
+- npm
+
+### Backend
+
 ```bash
-python backend/manage.py runserver 0.0.0.0:8000
+cd backend
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py runserver 127.0.0.1:8000
 ```
 
-API will be available at `http://localhost:8000/api/`.
+Backend API:
 
----
+```text
+http://localhost:8000/api/
+```
 
-## 3) Frontend — React App
+### Frontend
 
-1. Install dependencies
+From the repository root:
+
 ```bash
 npm install
-```
-
-2. Configure API URL (optional)
-- Defaults to `http://localhost:8000` via `src/config.js`.
-- You can override with environment var: `REACT_APP_API_URL`.
-
-3. Start dev server
-```bash
 npm start
-```
-
-App runs at `http://localhost:3000` and proxies to the backend.
-
----
-
-## 4) Data Flow and Features
-
-- Search: The frontend calls `POST /api/search-terms/` with a query (and optional keywords). The backend updates `backend/config.json` and executes `backend/scripts/arxiv_kmeans_sbert_umap.py`, which produces clustering CSVs under `backend/scripts/out/`.
-- Papers API: `GET /api/papers/?page_size=100` returns processed papers (merged with clustering info when available) and pagination.
-- Clusters chart: Reads the currently loaded papers from the frontend state and aggregates counts by `cluster`/`cluster_label`.
-- Publications Over Time: Groups the loaded papers by Month/Year and displays the last 12 months.
-- Total available: The frontend calls `GET /api/papers/?get_latest_log_info=true` which parses the latest extractor log and shows “(out of X total available)”.
-
----
-
-## 5) Common Commands
-
-Backend (from repo root with venv active):
-```bash
-python backend/manage.py makemigrations
-python backend/manage.py migrate
-python backend/manage.py createsuperuser
-python backend/manage.py runserver 0.0.0.0:8000
 ```
 
 Frontend:
-```bash
-npm start
-npm run build
+
+```text
+http://localhost:3000
 ```
 
----
+If building for local static serving:
 
-## 6) Environment and Configuration
+```bash
+REACT_APP_API_URL=http://localhost:8000/api npm run build
+```
 
-- Frontend base URL: `src/config.js`
-  - `API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000'`
-  - Endpoints used:
-    - `GET /api/papers/`
-    - `GET /api/papers/?get_latest_log_info=true`
-    - `POST /api/search-terms/`
-    - `GET /api/search-terms/clear/`
+## Running the AI Pipeline
 
-- Backend settings: `backend/config/settings.py`
-- Script output: `backend/scripts/out/*.csv`
-- Logs parsed for totals: `backend/scripts/logs/arxiv_extractor_*.log`
+The frontend triggers the pipeline through the backend when a user submits a search. The pipeline can also be run manually:
 
----
-
-## 7) Running the Full Dev Stack (Quickstart)
-
-Terminal 1 — Backend:
 ```bash
 cd backend
 source venv/bin/activate
-python manage.py migrate
-python manage.py runserver 0.0.0.0:8000
+ARXIV_EXTRACTOR_BASE_DIR=./scripts python scripts/arxiv_kmeans_sbert_umap.py
 ```
 
-Terminal 2 — Frontend:
+Useful environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `LITE_MAX_PAPERS` | Maximum papers to fetch, default 100 |
+| `LITE_EMBEDDING_MODEL` | Embedding model, default `all-MiniLM-L6-v2` |
+| `LITE_CLUSTERING_MODE` | `hdbscan` by default, `kmeans` fallback available |
+| `LITE_MIN_TOPIC_SIZE` | Minimum HDBSCAN topic size |
+| `LITE_MIN_TOPIC_SAMPLES` | HDBSCAN min samples |
+| `GROQ_API_KEY` | Optional Groq key for topic-label polishing |
+| `GROQ_TOPIC_MODEL` | Optional Groq model name |
+
+## Import Existing CSV Results
+
+If a CSV already exists under `backend/scripts/out/`, import it into the database:
+
 ```bash
-npm install
-npm start
+cd backend
+source venv/bin/activate
+python manage.py import_latest_topics
 ```
 
-Open `http://localhost:3000`.
+This creates:
 
----
+- One `SearchJob`
+- Discovered `Topic` records
+- `Paper` records
+- `PaperTopic` assignments
 
-## 8) Triggering a Search (Example)
+## Project Structure
 
-In the UI search box, try:
-- Query: `large language models`
-- Optional keywords: `safety, evaluation`
-
-Flow:
-1) Frontend clears search terms, posts new terms. 2) Backend runs the extractor script. 3) Frontend polls and then loads papers via `/api/papers/`. 4) Charts update from the loaded papers.
-
----
-
-## 9) Deployment Notes
-
-- Production build (frontend):
-```bash
-npm run build
-```
-- Serve built assets with your web server or let Django serve the SPA via `templates/index.html` and static files settings.
-- Ensure `REACT_APP_API_URL` points to your API base (without trailing `/api` because it’s already included in `config/urls.py`).
-
----
-
-## 10) Troubleshooting
-
-- Frontend builds but charts don't update:
-  - Confirm the backend is running at `http://localhost:8000` and endpoints respond (check the browser network tab for `/api/papers/`).
-  - Ensure `backend/scripts/out/*.csv` exists after running a search; the extractor script must produce files.
-
-- “Total available” number not updating:
-  - The backend parses the newest file in `backend/scripts/logs/`. Verify the latest log contains a line like: `Got first page: 100 of 8209 total results`.
-  - Frontend calls `GET /api/papers/?get_latest_log_info=true`; verify it returns `{ latest_log_total: <number> }` in the browser dev tools.
-
-- CORS or preflight issues:
-  - Run both dev servers locally (3000 and 8000). CRA dev proxy is configured; if you change ports, update environment variables accordingly.
-
-- Python dependencies failing to build:
-  - Make sure you’re on Python 3.12 and have developer tools installed (Xcode CLT on macOS).
-
----
-
-## 11) Project Structure (high level)
-
-```
+```text
 backend/
-  api/               # Django REST API
-  config/            # Django settings & urls
-  scripts/           # arXiv extractor + outputs (out/) and logs/
+  api/
+    management/commands/import_latest_topics.py
+    migrations/
+    models.py
+    views.py
+  config/
+  scripts/
+    arxiv_kmeans_sbert_umap.py
+    out/
+    logs/
   manage.py
-src/                 # React app source
-public/              # CRA public assets
+src/
+  components/
+  context/
+  services/
+  App.js
+public/
 ```
 
----
+## Resume Summary
 
+**LITE | React, Django REST Framework, Python, Sentence-BERT, UMAP, HDBSCAN, TF-IDF, Groq API**
 
+Built and optimized a full-stack AI literature discovery platform that processes up to 100 arXiv papers per query, performs semantic topic modeling with UMAP + HDBSCAN, detects outlier papers, and visualizes interpretable research topics in a React dashboard.
+
+## Resume Bullets
+
+- Built a full-stack AI literature discovery platform that searches arXiv, processes up to 100 papers per query, and visualizes papers through an interactive React dashboard.
+- Upgraded the research discovery engine from fixed KMeans clustering to BERTopic-style semantic topic modeling using Sentence-BERT embeddings, UMAP, HDBSCAN, and TF-IDF topic labeling.
+- Improved embedding performance by about 7.4x on a 100-paper benchmark, reducing embedding time from 4.83 seconds to 0.65 seconds with a faster Sentence-BERT model.
+- Re-architected the project from CSV-only storage to a database-backed pipeline with persistent search jobs, paper metadata, topic labels, confidence scores, and paper-topic assignments.
+- Added optional Groq API support to polish automatically generated topic keywords into cleaner human-readable academic topic labels.
+- Detected 14 outlier or mixed-topic papers from a 100-paper benchmark, improving result quality by avoiding forced cluster assignment.
+
+## Known Improvements
+
+- Move production storage from SQLite to PostgreSQL.
+- Add pgvector for persistent embedding search.
+- Add a real background worker such as Celery or RQ.
+- Add user accounts and saved searches.
+- Add API and frontend tests.
+- Clean remaining frontend lint warnings.
+- Add screenshots or a demo GIF to this README.
