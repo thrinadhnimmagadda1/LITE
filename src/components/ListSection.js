@@ -1,8 +1,10 @@
 import React, { useState, useRef } from 'react';
 import { Skeleton, SkeletonCard } from './Skeleton';
+import { askPaperQuestion, preparePaperRAG } from '../services/api';
 
 const ListSection = ({ items = [], isLoading = false, onCategorySelect, onItemClick }) => {
   const [expandedId, setExpandedId] = useState(null);
+  const [ragState, setRagState] = useState({});
 
   const toggleAbstract = (e, itemId) => {
     e.preventDefault();
@@ -25,6 +27,72 @@ const ListSection = ({ items = [], isLoading = false, onCategorySelect, onItemCl
     
     if (!isAbstractToggle) {
       onItemClick?.(itemId);
+    }
+  };
+
+  const prepareChat = async (itemId, paperId) => {
+    setRagState(prev => ({
+      ...prev,
+      [itemId]: { ...prev[itemId], status: 'preparing', error: null }
+    }));
+
+    try {
+      const data = await preparePaperRAG(paperId);
+      setRagState(prev => ({
+        ...prev,
+        [itemId]: {
+          ...prev[itemId],
+          status: 'ready',
+          prepareInfo: data,
+          messages: prev[itemId]?.messages || [],
+          error: null
+        }
+      }));
+    } catch (error) {
+      setRagState(prev => ({
+        ...prev,
+        [itemId]: { ...prev[itemId], status: 'error', error: error.message }
+      }));
+    }
+  };
+
+  const askQuestion = async (event, itemId, paperId) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const question = String(formData.get('question') || '').trim();
+    if (!question) return;
+    event.currentTarget.reset();
+
+    const currentMessages = ragState[itemId]?.messages || [];
+    setRagState(prev => ({
+      ...prev,
+      [itemId]: {
+        ...prev[itemId],
+        status: 'answering',
+        messages: [...currentMessages, { role: 'user', text: question }],
+        error: null
+      }
+    }));
+
+    try {
+      const data = await askPaperQuestion(paperId, question);
+      setRagState(prev => ({
+        ...prev,
+        [itemId]: {
+          ...prev[itemId],
+          status: 'ready',
+          messages: [
+            ...(prev[itemId]?.messages || []),
+            { role: 'assistant', text: data.answer, source: data.model_source }
+          ],
+          error: null
+        }
+      }));
+    } catch (error) {
+      setRagState(prev => ({
+        ...prev,
+        [itemId]: { ...prev[itemId], status: 'ready', error: error.message }
+      }));
     }
   };
 
@@ -95,6 +163,7 @@ const ListSection = ({ items = [], isLoading = false, onCategorySelect, onItemCl
       : null;
     const hasAbstract = Boolean(item.abstract || item.line3);
     const isExpanded = expandedId === itemId;
+    const chat = ragState[itemId] || { status: 'idle', messages: [] };
     
     return (
       <div 
@@ -233,6 +302,77 @@ const ListSection = ({ items = [], isLoading = false, onCategorySelect, onItemCl
                       {getItemProperty(item, 'abstract', getItemProperty(item, 'line3', 'No abstract available.'))}
                     </p>
                   </div>
+                </div>
+                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h4 className="text-sm font-semibold text-slate-800">Ask this paper</h4>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Uses full PDF text when available, cached only for this paper.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        prepareChat(itemId, item.id);
+                      }}
+                      disabled={chat.status === 'preparing'}
+                      className="rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                    >
+                      {chat.status === 'preparing' ? 'Preparing...' : chat.status === 'ready' ? 'Rebuild Cache' : 'Prepare Chat'}
+                    </button>
+                  </div>
+
+                  {chat.prepareInfo && (
+                    <p className="mt-3 text-xs text-slate-500">
+                      Ready with {chat.prepareInfo.chunks} chunks ({chat.prepareInfo.status.replace('_', ' ')}).
+                    </p>
+                  )}
+
+                  {chat.messages?.length > 0 && (
+                    <div className="mt-4 space-y-3">
+                      {chat.messages.map((message, messageIndex) => (
+                        <div
+                          key={`${itemId}-message-${messageIndex}`}
+                          className={`rounded-md p-3 text-sm ${
+                            message.role === 'user'
+                              ? 'bg-white text-slate-700 ring-1 ring-slate-200'
+                              : 'bg-emerald-50 text-emerald-900 ring-1 ring-emerald-100'
+                          }`}
+                        >
+                          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            {message.role === 'user' ? 'You' : `AI${message.source ? ` · ${message.source}` : ''}`}
+                          </div>
+                          <p className="whitespace-pre-line leading-relaxed">{message.text}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <form
+                    className="mt-4 flex flex-col gap-2 sm:flex-row"
+                    onSubmit={(event) => askQuestion(event, itemId, item.id)}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <input
+                      name="question"
+                      type="text"
+                      placeholder="Ask about methods, results, limitations..."
+                      className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                    />
+                    <button
+                      type="submit"
+                      disabled={chat.status === 'answering' || chat.status === 'preparing'}
+                      className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                    >
+                      {chat.status === 'answering' ? 'Answering...' : 'Ask'}
+                    </button>
+                  </form>
+
+                  {chat.error && (
+                    <p className="mt-3 text-xs font-medium text-red-600">{chat.error}</p>
+                  )}
                 </div>
               </div>
             )}

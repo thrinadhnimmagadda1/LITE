@@ -88,6 +88,53 @@ The upgraded backend uses four core data models:
 
 This design makes the project more production-ready than a CSV-only workflow because it supports persistent search history, deduplication, topic tracking, and scalable API retrieval.
 
+## Paper-Specific RAG
+
+LITE also includes a storage-efficient RAG workflow for asking questions about one selected paper. The UI can keep the paper card lightweight by showing the title, authors, topic, keywords, and abstract, while the AI assistant uses cached full-paper context behind the scenes.
+
+The RAG workflow is intentionally scoped to a single paper:
+
+```text
+User opens one paper
+  -> backend prepares only that paper
+  -> arXiv PDF is downloaded only when a real PDF URL is available
+  -> text is extracted and split into chunks
+  -> chunk embeddings are stored in the database
+  -> user asks a question
+  -> retrieval searches chunks where paper_id = selected paper
+  -> local Llama/Ollama generates a grounded answer from top chunks
+```
+
+This avoids downloading every PDF up front. Papers are processed lazily, so storage is used only for papers the user actually opens or asks about. If a full PDF is unavailable, the system falls back to abstract-only retrieval so the chat still works.
+
+Additional RAG models:
+
+| Model | Purpose |
+| --- | --- |
+| `PaperDocument` | Caches extracted full text or abstract fallback for one paper |
+| `PaperChunk` | Stores selected-paper chunks, embeddings, and token estimates |
+
+RAG endpoints:
+
+| Endpoint | Method | Description |
+| --- | --- | --- |
+| `/api/papers/<paper_id>/rag/prepare/` | POST | Lazily prepares and caches one paper for chat |
+| `/api/papers/<paper_id>/rag/ask/` | POST | Answers a question using only chunks from the selected paper |
+
+Local answer generation uses Ollama when available:
+
+```bash
+ollama pull llama3.2:3b
+```
+
+Optional environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `OLLAMA_URL` | Local Ollama generate endpoint, default `http://localhost:11434/api/generate` |
+| `OLLAMA_MODEL` | Local chat model, default `llama3.2:3b` |
+| `LITE_RAG_EMBEDDING_MODEL` | Chunk retrieval embedding model, default `all-MiniLM-L6-v2` |
+
 ## Why HDBSCAN Instead of Only KMeans?
 
 The original pipeline used KMeans clustering. KMeans is simple and useful, but it forces every paper into a cluster and requires selecting a fixed number of clusters.
@@ -240,7 +287,23 @@ src/
 public/
 ```
 
+## Resume Summary
 
+**LITE | React, Django REST Framework, Python, Sentence-BERT, UMAP, HDBSCAN, TF-IDF, Groq API**
+
+Built and optimized a full-stack AI literature discovery platform that processes up to 100 arXiv papers per query, performs semantic topic modeling with UMAP + HDBSCAN, detects outlier papers, and visualizes interpretable research topics in a React dashboard.
+
+## Resume Bullets
+
+- Built a full-stack AI literature discovery platform that searches arXiv, processes up to 100 papers per query, and visualizes papers through an interactive React dashboard.
+- Upgraded the research discovery engine from fixed KMeans clustering to BERTopic-style semantic topic modeling using Sentence-BERT embeddings, UMAP, HDBSCAN, and TF-IDF topic labeling.
+- Improved embedding performance by about 7.4x on a 100-paper benchmark, reducing embedding time from 4.83 seconds to 0.65 seconds with a faster Sentence-BERT model.
+- Re-architected the project from CSV-only storage to a database-backed pipeline with persistent search jobs, paper metadata, topic labels, confidence scores, and paper-topic assignments.
+- Added optional Groq API support to polish automatically generated topic keywords into cleaner human-readable academic topic labels.
+- Added paper-specific RAG with lazy PDF processing, cached chunks, selected-paper retrieval, and local Llama/Ollama answer generation for grounded full-document Q&A.
+- Detected 14 outlier or mixed-topic papers from a 100-paper benchmark, improving result quality by avoiding forced cluster assignment.
+
+## Known Improvements
 
 - Move production storage from SQLite to PostgreSQL.
 - Add pgvector for persistent embedding search.

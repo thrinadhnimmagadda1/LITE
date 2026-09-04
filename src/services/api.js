@@ -571,3 +571,32 @@ export const fetchPaperById = async (id) => {
     throw error;
   }
 };
+
+export const preparePaperRAG = async (paperId) => {
+  const response = await fetch(`${API_BASE_URL}/papers/${encodeURIComponent(paperId)}/rag/prepare/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Failed to prepare paper chat');
+  }
+
+  return response.json();
+};
+
+export const askPaperQuestion = async (paperId, question) => {
+  const response = await fetch(`${API_BASE_URL}/papers/${encodeURIComponent(paperId)}/rag/ask/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Failed to answer paper question');
+  }
+
+  return response.json();
+};

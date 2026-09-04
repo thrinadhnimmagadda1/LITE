@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Paper, PaperImportLog, PaperTopic, SearchJob, Topic
+from .models import Paper, PaperChunk, PaperDocument, PaperImportLog, PaperTopic, SearchJob, Topic
 
 
 @admin.register(Paper)
@@ -27,6 +27,19 @@ class TopicAdmin(admin.ModelAdmin):
 class PaperTopicAdmin(admin.ModelAdmin):
     list_display = ('paper', 'topic', 'search_job', 'confidence')
     list_filter = ('search_job', 'topic')
+
+
+@admin.register(PaperDocument)
+class PaperDocumentAdmin(admin.ModelAdmin):
+    list_display = ('paper', 'status', 'source_url', 'extracted_at', 'updated_at')
+    search_fields = ('paper__arxiv_id', 'paper__title', 'source_url')
+    list_filter = ('status', 'extracted_at')
+
+
+@admin.register(PaperChunk)
+class PaperChunkAdmin(admin.ModelAdmin):
+    list_display = ('paper', 'document', 'chunk_index', 'token_estimate')
+    search_fields = ('paper__arxiv_id', 'paper__title', 'text')
 
 
 @admin.register(PaperImportLog)

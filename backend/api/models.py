@@ -119,6 +119,47 @@ class PaperTopic(models.Model):
         return f"{self.paper_id} -> {self.topic_id}"
 
 
+class PaperDocument(models.Model):
+    """Cached full-text document for paper-scoped RAG."""
+    paper = models.OneToOneField(Paper, on_delete=models.CASCADE, related_name='document')
+    source_url = models.URLField(blank=True)
+    status = models.CharField(max_length=20, choices=[
+        ('pending', 'Pending'),
+        ('ready', 'Ready'),
+        ('failed', 'Failed'),
+        ('abstract_only', 'Abstract Only'),
+    ], default='pending', db_index=True)
+    full_text = models.TextField(blank=True)
+    error_message = models.TextField(blank=True)
+    extracted_at = models.DateTimeField(null=True, blank=True)
+    metadata = JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.paper.arxiv_id} ({self.status})"
+
+
+class PaperChunk(models.Model):
+    """A searchable chunk from one selected paper."""
+    paper = models.ForeignKey(Paper, on_delete=models.CASCADE, related_name='chunks')
+    document = models.ForeignKey(PaperDocument, on_delete=models.CASCADE, related_name='chunks')
+    chunk_index = models.IntegerField()
+    text = models.TextField()
+    embedding = JSONField(default=list, blank=True)
+    token_estimate = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('document', 'chunk_index')
+        indexes = [
+            models.Index(fields=['paper', 'chunk_index']),
+        ]
+
+    def __str__(self):
+        return f"{self.paper.arxiv_id} chunk {self.chunk_index}"
+
+
 class PaperImportLog(models.Model):
     """Track CSV imports and updates."""
     filename = models.CharField(max_length=255)

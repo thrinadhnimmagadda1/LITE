@@ -13,3 +13,4 @@ hdbscan>=0.8.29
 matplotlib>=3.5.0
 python-dotenv>=1.0.0
 whitenoise>=6.0.0
+pypdf>=4.0.0

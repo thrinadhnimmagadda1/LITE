@@ -1,12 +1,15 @@
 import json
 import os
+import re
 import subprocess
 import sys
+from io import BytesIO
 from datetime import datetime, timedelta
 from pathlib import Path
 from django.conf import settings
 from django.core.cache import cache
 from django.db.models import Count, Q
+from django.utils import timezone
 from django.views.decorators.cache import cache_page
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
@@ -15,7 +18,88 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
-from .models import Paper, PaperImportLog, PaperTopic, SearchJob
+from .models import Paper, PaperChunk, PaperDocument, PaperImportLog, PaperTopic, SearchJob
+
+
+def get_embedding_model():
+    from sentence_transformers import SentenceTransformer
+    model_name = os.environ.get("LITE_RAG_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+    return SentenceTransformer(model_name)
+
+
+def normalize_arxiv_pdf_url(paper):
+    if paper.url and paper.url.startswith("http") and "arxiv.org" in paper.url:
+        return paper.url.replace("/abs/", "/pdf/").removesuffix(".pdf") + ".pdf"
+    if paper.arxiv_id and not paper.arxiv_id.startswith("imported-"):
+        return f"https://arxiv.org/pdf/{paper.arxiv_id}.pdf"
+    return ""
+
+
+def extract_pdf_text(pdf_bytes):
+    from pypdf import PdfReader
+    reader = PdfReader(BytesIO(pdf_bytes))
+    pages = []
+    for page in reader.pages:
+        pages.append(page.extract_text() or "")
+    return "\n\n".join(pages).strip()
+
+
+def chunk_text(text, max_words=220, overlap=45):
+    words = re.sub(r"\s+", " ", text).strip().split()
+    if not words:
+        return []
+    chunks = []
+    step = max(1, max_words - overlap)
+    for start in range(0, len(words), step):
+        chunk = " ".join(words[start:start + max_words]).strip()
+        if len(chunk) > 120:
+            chunks.append(chunk)
+    return chunks
+
+
+def cosine_similarity(vec_a, vec_b):
+    import math
+    if not vec_a or not vec_b:
+        return 0
+    dot = sum(a * b for a, b in zip(vec_a, vec_b))
+    norm_a = math.sqrt(sum(a * a for a in vec_a))
+    norm_b = math.sqrt(sum(b * b for b in vec_b))
+    if not norm_a or not norm_b:
+        return 0
+    return dot / (norm_a * norm_b)
+
+
+def build_grounded_answer(question, chunks, paper):
+    context = "\n\n".join(f"[Chunk {i + 1}] {chunk.text}" for i, chunk in enumerate(chunks))
+    prompt = (
+        "You are a research-paper assistant. Answer only from the provided paper context. "
+        "If the context does not contain the answer, say that the selected paper text does not provide enough information.\n\n"
+        f"Paper title: {paper.title}\n\n"
+        f"Context:\n{context}\n\n"
+        f"Question: {question}\n\n"
+        "Answer:"
+    )
+    ollama_url = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/generate")
+    ollama_model = os.environ.get("OLLAMA_MODEL", "llama3.2:3b")
+    try:
+        import requests
+        response = requests.post(
+            ollama_url,
+            json={"model": ollama_model, "prompt": prompt, "stream": False},
+            timeout=60,
+        )
+        response.raise_for_status()
+        answer = response.json().get("response", "").strip()
+        if answer:
+            return answer, "ollama"
+    except Exception:
+        pass
+
+    fallback = chunks[0].text[:900] if chunks else paper.abstract[:900]
+    return (
+        "Local Llama is not available yet, so here is the most relevant selected-paper context I found:\n\n"
+        f"{fallback}"
+    ), "retrieval_fallback"
 
 
 class ClearSearchTermsView(APIView):
@@ -546,6 +630,141 @@ class SearchTermsAPIView(APIView):
                 {'error': f'Failed to update config: {str(e)}'}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class PaperRAGPrepareAPIView(APIView):
+    """Prepare one paper for full-document RAG using lazy PDF processing."""
+
+    @method_decorator(csrf_exempt)
+    def dispatch(self, request, *args, **kwargs):
+        return super().dispatch(request, *args, **kwargs)
+
+    def post(self, request, paper_id):
+        try:
+            paper = Paper.objects.get(arxiv_id=paper_id)
+        except Paper.DoesNotExist:
+            return Response({'error': 'Paper not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        document, _ = PaperDocument.objects.get_or_create(
+            paper=paper,
+            defaults={'source_url': normalize_arxiv_pdf_url(paper)}
+        )
+        if document.status in ('ready', 'abstract_only') and document.chunks.exists():
+            return Response({
+                'status': document.status,
+                'paper_id': paper.arxiv_id,
+                'chunks': document.chunks.count(),
+                'source_url': document.source_url,
+                'cached': True,
+            })
+
+        source_url = normalize_arxiv_pdf_url(paper)
+        document.source_url = source_url
+        full_text = ""
+        source = "abstract"
+
+        if source_url:
+            try:
+                import requests
+                response = requests.get(source_url, timeout=30)
+                response.raise_for_status()
+                full_text = extract_pdf_text(response.content)
+                source = "pdf"
+            except Exception as exc:
+                document.error_message = f"PDF extraction failed, using abstract fallback: {exc}"
+
+        if not full_text:
+            full_text = f"{paper.title}\n\n{paper.abstract}".strip()
+            document.status = "abstract_only"
+        else:
+            document.status = "ready"
+
+        chunks = chunk_text(full_text)
+        if not chunks:
+            return Response({'error': 'No usable paper text found'}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        model = get_embedding_model()
+        embeddings = model.encode(chunks, show_progress_bar=False, convert_to_numpy=True, normalize_embeddings=True)
+
+        document.full_text = full_text
+        document.extracted_at = timezone.now()
+        document.metadata = {
+            'source': source,
+            'chunk_count': len(chunks),
+            'embedding_model': os.environ.get("LITE_RAG_EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
+        }
+        document.save()
+        document.chunks.all().delete()
+
+        PaperChunk.objects.bulk_create([
+            PaperChunk(
+                paper=paper,
+                document=document,
+                chunk_index=index,
+                text=text,
+                embedding=embeddings[index].tolist(),
+                token_estimate=max(1, len(text.split())),
+            )
+            for index, text in enumerate(chunks)
+        ])
+
+        return Response({
+            'status': document.status,
+            'paper_id': paper.arxiv_id,
+            'chunks': len(chunks),
+            'source_url': source_url,
+            'cached': False,
+        })
+
+
+class PaperRAGAskAPIView(APIView):
+    """Answer questions using chunks from only the selected paper."""
+
+    @method_decorator(csrf_exempt)
+    def dispatch(self, request, *args, **kwargs):
+        return super().dispatch(request, *args, **kwargs)
+
+    def post(self, request, paper_id):
+        question = str(request.data.get('question', '')).strip()
+        if not question:
+            return Response({'error': 'Question is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            paper = Paper.objects.get(arxiv_id=paper_id)
+        except Paper.DoesNotExist:
+            return Response({'error': 'Paper not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        document = getattr(paper, 'document', None)
+        if not document or not document.chunks.exists():
+            prepare_response = PaperRAGPrepareAPIView().post(request, paper_id)
+            if prepare_response.status_code >= 400:
+                return prepare_response
+            document = PaperDocument.objects.get(paper=paper)
+
+        chunks = list(document.chunks.all())
+        model = get_embedding_model()
+        question_embedding = model.encode([question], show_progress_bar=False, convert_to_numpy=True, normalize_embeddings=True)[0].tolist()
+        ranked_chunks = sorted(
+            chunks,
+            key=lambda chunk: cosine_similarity(question_embedding, chunk.embedding),
+            reverse=True,
+        )[:4]
+        answer, model_source = build_grounded_answer(question, ranked_chunks, paper)
+
+        return Response({
+            'paper_id': paper.arxiv_id,
+            'question': question,
+            'answer': answer,
+            'model_source': model_source,
+            'document_status': document.status,
+            'chunks_used': [
+                {
+                    'chunk_index': chunk.chunk_index,
+                    'preview': chunk.text[:240],
+                }
+                for chunk in ranked_chunks
+            ],
+        })
 
 
 class PapersAPIView(APIView):
